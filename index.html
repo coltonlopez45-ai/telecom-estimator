@@ -49,13 +49,20 @@
 
   /* LEFT SIDEBAR */
   #sidebar {
-    width: 220px;
+    width: 160px;
     background: #16213e;
     border-right: 1px solid #2a2a4a;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
     overflow-y: auto;
+    transition: margin-left 0.3s ease, width 0.3s ease;
+  }
+
+  #sidebar.hidden {
+    margin-left: -160px;
+    width: 0;
+    overflow: hidden;
   }
 
   #sidebar h3 {
@@ -339,13 +346,20 @@
 
   /* RIGHT SIDEBAR - TAKEOFF PANEL */
   #takeoff-panel {
-    width: 320px;
+    width: 280px;
     background: #16213e;
     border-left: 1px solid #2a2a4a;
     display: flex;
     flex-direction: column;
     flex-shrink: 0;
     overflow-y: auto;
+    transition: margin-right 0.3s ease, width 0.3s ease;
+  }
+
+  #takeoff-panel.hidden {
+    margin-right: -280px;
+    width: 0;
+    overflow: hidden;
   }
 
   #takeoff-panel h3 {
@@ -540,6 +554,7 @@
 
         <div class="toolbar-group">
           <button onclick="document.getElementById('file-input').click()" style="font-size:0.75rem;">📂 New PDF</button>
+          <button onclick="toggleSidebars()" style="font-size:0.75rem;" title="Hide/show sidebars for full screen">⬌ Toggle Panels</button>
         </div>
 
       </div>
@@ -1053,6 +1068,24 @@ document.getElementById('canvas-wrapper').addEventListener('click', function(e) 
     return;
   }
 });
+
+// ─── SIDEBAR TOGGLE ────────────────────────────────────────
+
+let sidebarsVisible = true;
+
+function toggleSidebars() {
+  sidebarsVisible = !sidebarsVisible;
+  const sidebar = document.getElementById('sidebar');
+  const takeoffPanel = document.getElementById('takeoff-panel');
+  
+  if (sidebarsVisible) {
+    sidebar.classList.remove('hidden');
+    takeoffPanel.classList.remove('hidden');
+  } else {
+    sidebar.classList.add('hidden');
+    takeoffPanel.classList.add('hidden');
+  }
+}
 </script>
 </body>
 </html>
