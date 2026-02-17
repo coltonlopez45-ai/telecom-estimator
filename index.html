@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TelecomEst Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: Arial, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* TOP NAV */
+  #topbar {
+    background: #16213e;
+    border-bottom: 2px solid #00d4ff;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  #topbar h1 {
+    font-size: 1.4rem;
+    color: #00d4ff;
+    letter-spacing: 2px;
+  }
+
+  #topbar span {
+    font-size: 0.75rem;
+    color: #888;
+    letter-spacing: 1px;
+  }
+
+  /* MAIN LAYOUT */
+  #main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* LEFT SIDEBAR */
+  #sidebar {
+    width: 220px;
+    background: #16213e;
+    border-right: 1px solid #2a2a4a;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  #sidebar h3 {
+    padding: 12px 15px;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    color: #888;
+    text-transform: uppercase;
+    border-bottom: 1px solid #2a2a4a;
+  }
+
+  #page-thumbnails {
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .thumb {
+    background: #0f3460;
+    border: 2px solid #2a2a4a;
+    border-radius: 4px;
+    padding: 8px;
+    cursor: pointer;
+    text-align: center;
+    font-size: 0.75rem;
+    color: #aaa;
+    transition: all 0.2s;
+  }
+
+  .thumb:hover, .thumb.active {
+    border-color: #00d4ff;
+    color: #00d4ff;
+    background: #0a2040;
+  }
+
+  .thumb canvas {
+    width: 100%;
+    border-radius: 2px;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* CENTER VIEWER */
+  #viewer-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: #0d0d1a;
+  }
+
+  /* TOOLBAR */
+  #toolbar {
+    background: #16213e;
+    border-bottom: 1px solid #2a2a4a;
+    padding: 8px 15px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+  }
+
+  .toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-right: 12px;
+    border-right: 1px solid #2a2a4a;
+  }
+
+  .toolbar-group:last-child { border-right: none; }
+
+  .toolbar-group label {
+    font-size: 0.7rem;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    white-space: nowrap;
+  }
+
+  button {
+    background: #0f3460;
+    color: #e0e0e0;
+    border: 1px solid #2a4a7a;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  button:hover { background: #1a4a8a; border-color: #00d4ff; color: #00d4ff; }
+  button.active { background: #00d4ff; color: #000; border-color: #00d4ff; font-weight: bold; }
+  button.green { background: #0a4a2a; border-color: #00ff88; color: #00ff88; }
+  button.green:hover { background: #00ff88; color: #000; }
+
+  input[type="number"], input[type="text"], select {
+    background: #0d1a2e;
+    border: 1px solid #2a4a7a;
+    color: #e0e0e0;
+    padding: 5px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    width: 80px;
+  }
+
+  select { width: auto; }
+
+  /* SCALE STATUS */
+  #scale-status {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: #1a1a2e;
+    border: 1px solid #2a2a4a;
+  }
+
+  #scale-status.calibrated {
+    border-color: #00ff88;
+    color: #00ff88;
+  }
+
+  #scale-status.uncalibrated {
+    border-color: #ffaa00;
+    color: #ffaa00;
+  }
+
+  /* PDF CANVAS AREA */
+  #canvas-container {
+    flex: 1;
+    overflow: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+  }
+
+  #canvas-wrapper {
+    position: relative;
+    display: inline-block;
+    cursor: crosshair;
+  }
+
+  #pdf-canvas {
+    display: block;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+
+  #overlay-canvas {
+    position: absolute;
+    top: 0; left: 0;
+    pointer-events: none;
+  }
+
+  /* UPLOAD SCREEN */
+  #upload-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+  }
+
+  #upload-screen.hidden { display: none; }
+  #viewer-wrap { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  #viewer-wrap.visible { display: flex; }
+
+  #drop-zone {
+    border: 2px dashed #00d4ff;
+    border-radius: 12px;
+    padding: 60px 80px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: #16213e;
+  }
+
+  #drop-zone:hover, #drop-zone.dragover {
+    background: #0a2040;
+    border-color: #00ff88;
+  }
+
+  #drop-zone .icon { font-size: 3rem; margin-bottom: 12px; }
+  #drop-zone h2 { font-size: 1.2rem; color: #00d4ff; margin-bottom: 8px; }
+  #drop-zone p { font-size: 0.85rem; color: #888; }
+
+  #file-input { display: none; }
+
+  /* CALIBRATION MODAL */
+  #cal-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #cal-modal.show { display: flex; }
+
+  #cal-box {
+    background: #16213e;
+    border: 1px solid #00d4ff;
+    border-radius: 8px;
+    padding: 30px;
+    width: 380px;
+    text-align: center;
+  }
+
+  #cal-box h3 { color: #00d4ff; margin-bottom: 8px; font-size: 1.1rem; }
+  #cal-box p { font-size: 0.82rem; color: #aaa; margin-bottom: 20px; line-height: 1.5; }
+
+  .cal-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    justify-content: center;
+    margin-bottom: 15px;
+  }
+
+  .cal-row label { font-size: 0.8rem; color: #ccc; white-space: nowrap; }
+  .cal-row input { width: 100px; }
+  .cal-row select { width: 70px; }
+
+  #cal-result {
+    font-size: 0.8rem;
+    color: #00ff88;
+    min-height: 20px;
+    margin-bottom: 15px;
+  }
+
+  .modal-btns { display: flex; gap: 10px; justify-content: center; }
+
+  /* PAGE INFO BAR */
+  #page-info {
+    background: #16213e;
+    border-top: 1px solid #2a2a4a;
+    padding: 6px 15px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 0.75rem;
+    color: #888;
+    flex-shrink: 0;
+  }
+
+  #page-info span { color: #ccc; }
+  #page-info .sep { color: #2a2a4a; }
+
+  /* CALIBRATION INSTRUCTIONS */
+  #cal-instructions {
+    display: none;
+    position: fixed;
+    top: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ffaa00;
+    color: #000;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: bold;
+    z-index: 50;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+  }
+
+  /* ZOOM */
+  #zoom-display {
+    font-size: 0.75rem;
+    color: #00d4ff;
+    min-width: 40px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div id="topbar">
+  <h1>⚡ TELECOMEST PRO</h1>
+  <span>PHASE 1 — PDF VIEWER & SCALE CALIBRATION</span>
+</div>
+
+<div id="main">
+
+  <!-- SIDEBAR -->
+  <div id="sidebar">
+    <h3>Pages</h3>
+    <div id="page-thumbnails"></div>
+  </div>
+
+  <!-- VIEWER AREA -->
+  <div id="viewer-area">
+
+    <!-- UPLOAD SCREEN -->
+    <div id="upload-screen">
+      <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="icon">📄</div>
+        <h2>Upload Construction Drawing</h2>
+        <p>Click or drag & drop a PDF file<br>Supports multi-page drawing sets</p>
+      </div>
+      <input type="file" id="file-input" accept=".pdf">
+      <p style="font-size:0.75rem; color:#555;">Your drawings stay on your device — nothing is uploaded to any server</p>
+    </div>
+
+    <!-- VIEWER WRAP (hidden until PDF loaded) -->
+    <div id="viewer-wrap">
+
+      <!-- TOOLBAR -->
+      <div id="toolbar">
+
+        <div class="toolbar-group">
+          <label>Page</label>
+          <button onclick="changePage(-1)">◀</button>
+          <span id="page-num" style="font-size:0.8rem; min-width:60px; text-align:center;">1 / 1</span>
+          <button onclick="changePage(1)">▶</button>
+        </div>
+
+        <div class="toolbar-group">
+          <label>Zoom</label>
+          <button onclick="changeZoom(-0.25)">−</button>
+          <span id="zoom-display">100%</span>
+          <button onclick="changeZoom(0.25)">+</button>
+          <button onclick="fitToWindow()">Fit</button>
+        </div>
+
+        <div class="toolbar-group">
+          <label>Scale</label>
+          <button id="cal-btn" onclick="startCalibration()">📐 Calibrate</button>
+          <div id="scale-status" class="uncalibrated">⚠ Not Calibrated</div>
+        </div>
+
+        <div class="toolbar-group">
+          <button onclick="document.getElementById('file-input').click()" style="font-size:0.75rem;">📂 New PDF</button>
+        </div>
+
+      </div>
+
+      <!-- CALIBRATION INSTRUCTION BAR -->
+      <div id="cal-instructions">
+        📐 CALIBRATION MODE: Click two points on the drawing that represent a known distance
+      </div>
+
+      <!-- PDF CANVAS -->
+      <div id="canvas-container">
+        <div id="canvas-wrapper">
+          <canvas id="pdf-canvas"></canvas>
+          <canvas id="overlay-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- PAGE INFO BAR -->
+      <div id="page-info">
+        <span>Page: <span id="info-page">—</span></span>
+        <span class="sep">|</span>
+        <span>Scale: <span id="info-scale">Not calibrated</span></span>
+        <span class="sep">|</span>
+        <span>File: <span id="info-file">—</span></span>
+      </div>
+
+    </div><!-- /viewer-wrap -->
+
+  </div><!-- /viewer-area -->
+</div><!-- /main -->
+
+<!-- CALIBRATION MODAL -->
+<div id="cal-modal">
+  <div id="cal-box">
+    <h3>📐 Set Drawing Scale</h3>
+    <p>After clicking two points on the drawing,<br>enter the real-world distance between them.</p>
+    <div class="cal-row">
+      <label>Distance:</label>
+      <input type="number" id="cal-distance" placeholder="e.g. 10" min="0.01" step="0.01">
+      <select id="cal-unit">
+        <option value="ft">ft</option>
+        <option value="in">in</option>
+        <option value="m">m</option>
+      </select>
+    </div>
+    <div id="cal-result"></div>
+    <div class="modal-btns">
+      <button class="green" onclick="confirmCalibration()">✓ Set Scale</button>
+      <button onclick="cancelCalibration()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// PDF.js setup
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// STATE
+let pdfDoc = null;
+let currentPage = 1;
+let totalPages = 0;
+let zoomLevel = 1.0;
+let fileName = '';
+
+// Scale calibration state per page
+let pageScales = {};       // { pageNum: pixelsPerFoot }
+let calMode = false;
+let calPoints = [];
+let calPixelDistance = 0;
+
+// ─── PDF LOADING ───────────────────────────────────────────
+
+document.getElementById('file-input').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  fileName = file.name;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    loadPDF(ev.target.result);
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// Drag and drop
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type === 'application/pdf') {
+    fileName = file.name;
+    const reader = new FileReader();
+    reader.onload = ev => loadPDF(ev.target.result);
+    reader.readAsArrayBuffer(file);
+  }
+});
+
+async function loadPDF(arrayBuffer) {
+  const data = new Uint8Array(arrayBuffer);
+  pdfDoc = await pdfjsLib.getDocument({ data }).promise;
+  totalPages = pdfDoc.numPages;
+  currentPage = 1;
+
+  // Show viewer
+  document.getElementById('upload-screen').classList.add('hidden');
+  document.getElementById('viewer-wrap').classList.add('visible');
+
+  // Build thumbnails
+  await buildThumbnails();
+
+  // Render first page
+  await renderPage(currentPage);
+  updateInfo();
+}
+
+async function buildThumbnails() {
+  const container = document.getElementById('page-thumbnails');
+  container.innerHTML = '';
+  for (let i = 1; i <= totalPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const vp = page.getViewport({ scale: 0.15 });
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = vp.width;
+    thumbCanvas.height = vp.height;
+    const ctx = thumbCanvas.getContext('2d');
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+
+    const thumb = document.createElement('div');
+    thumb.className = 'thumb' + (i === 1 ? ' active' : '');
+    thumb.id = 'thumb-' + i;
+    thumb.appendChild(thumbCanvas);
+    thumb.appendChild(document.createTextNode('Page ' + i));
+    thumb.onclick = () => goToPage(i);
+    container.appendChild(thumb);
+  }
+}
+
+async function renderPage(pageNum) {
+  const page = await pdfDoc.getPage(pageNum);
+  const viewport = page.getViewport({ scale: zoomLevel });
+
+  const pdfCanvas = document.getElementById('pdf-canvas');
+  const overlayCanvas = document.getElementById('overlay-canvas');
+  const ctx = pdfCanvas.getContext('2d');
+
+  pdfCanvas.width = viewport.width;
+  pdfCanvas.height = viewport.height;
+  overlayCanvas.width = viewport.width;
+  overlayCanvas.height = viewport.height;
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+
+  // Update thumbnail highlight
+  document.querySelectorAll('.thumb').forEach(t => t.classList.remove('active'));
+  const activeThumb = document.getElementById('thumb-' + pageNum);
+  if (activeThumb) activeThumb.classList.add('active');
+
+  document.getElementById('page-num').textContent = pageNum + ' / ' + totalPages;
+  updateScaleStatus();
+}
+
+// ─── NAVIGATION ────────────────────────────────────────────
+
+async function changePage(dir) {
+  const newPage = currentPage + dir;
+  if (newPage < 1 || newPage > totalPages) return;
+  currentPage = newPage;
+  await renderPage(currentPage);
+  updateInfo();
+}
+
+async function goToPage(num) {
+  currentPage = num;
+  await renderPage(currentPage);
+  updateInfo();
+}
+
+// ─── ZOOM ──────────────────────────────────────────────────
+
+async function changeZoom(delta) {
+  zoomLevel = Math.max(0.25, Math.min(4.0, zoomLevel + delta));
+  document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
+  await renderPage(currentPage);
+}
+
+async function fitToWindow() {
+  if (!pdfDoc) return;
+  const page = await pdfDoc.getPage(currentPage);
+  const vp = page.getViewport({ scale: 1 });
+  const container = document.getElementById('canvas-container');
+  const scaleX = (container.clientWidth - 40) / vp.width;
+  const scaleY = (container.clientHeight - 40) / vp.height;
+  zoomLevel = Math.min(scaleX, scaleY);
+  document.getElementById('zoom-display').textContent = Math.round(zoomLevel * 100) + '%';
+  await renderPage(currentPage);
+}
+
+// ─── CALIBRATION ───────────────────────────────────────────
+
+function startCalibration() {
+  if (!pdfDoc) { alert('Please upload a PDF first.'); return; }
+  calMode = true;
+  calPoints = [];
+  document.getElementById('cal-instructions').style.display = 'block';
+  document.getElementById('canvas-wrapper').style.cursor = 'crosshair';
+  document.getElementById('cal-btn').classList.add('active');
+}
+
+function cancelCalibration() {
+  calMode = false;
+  calPoints = [];
+  document.getElementById('cal-modal').classList.remove('show');
+  document.getElementById('cal-instructions').style.display = 'none';
+  document.getElementById('canvas-wrapper').style.cursor = 'crosshair';
+  document.getElementById('cal-btn').classList.remove('active');
+  clearOverlay();
+}
+
+// Canvas click handler
+document.getElementById('canvas-wrapper').addEventListener('click', function(e) {
+  if (!calMode) return;
+
+  const rect = document.getElementById('pdf-canvas').getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  calPoints.push({ x, y });
+  drawCalPoint(x, y, calPoints.length);
+
+  if (calPoints.length === 2) {
+    // Calculate pixel distance
+    const dx = calPoints[1].x - calPoints[0].x;
+    const dy = calPoints[1].y - calPoints[0].y;
+    calPixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+    // Draw line between points
+    drawCalLine();
+
+    // Show modal
+    document.getElementById('cal-instructions').style.display = 'none';
+    document.getElementById('cal-modal').classList.add('show');
+    document.getElementById('cal-result').textContent =
+      'Pixel distance: ' + Math.round(calPixelDistance) + 'px between your two points';
+  }
+});
+
+function drawCalPoint(x, y, num) {
+  const ctx = document.getElementById('overlay-canvas').getContext('2d');
+  ctx.fillStyle = '#ffaa00';
+  ctx.beginPath();
+  ctx.arc(x, y, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#000';
+  ctx.font = 'bold 10px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(num, x, y);
+}
+
+function drawCalLine() {
+  const ctx = document.getElementById('overlay-canvas').getContext('2d');
+  ctx.strokeStyle = '#ffaa00';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 3]);
+  ctx.beginPath();
+  ctx.moveTo(calPoints[0].x, calPoints[0].y);
+  ctx.lineTo(calPoints[1].x, calPoints[1].y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function clearOverlay() {
+  const canvas = document.getElementById('overlay-canvas');
+  canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function confirmCalibration() {
+  const dist = parseFloat(document.getElementById('cal-distance').value);
+  const unit = document.getElementById('cal-unit').value;
+  if (!dist || dist <= 0) { alert('Please enter a valid distance.'); return; }
+
+  // Convert everything to feet for internal storage
+  let distInFeet = dist;
+  if (unit === 'in') distInFeet = dist / 12;
+  if (unit === 'm') distInFeet = dist * 3.28084;
+
+  // Pixels per foot at current zoom level
+  const pixelsPerFoot = calPixelDistance / distInFeet;
+
+  pageScales[currentPage] = {
+    pixelsPerFoot,
+    zoomAtCalibration: zoomLevel,
+    displayStr: dist + ' ' + unit
+  };
+
+  calMode = false;
+  document.getElementById('cal-modal').classList.remove('show');
+  document.getElementById('cal-btn').classList.remove('active');
+  clearOverlay();
+  updateScaleStatus();
+  updateInfo();
+
+  alert('✅ Scale set! This page is now calibrated.\n\nLinear measurements will be accurate for Page ' + currentPage + '.');
+}
+
+function updateScaleStatus() {
+  const statusEl = document.getElementById('scale-status');
+  if (pageScales[currentPage]) {
+    statusEl.className = 'scale-status calibrated';
+    statusEl.textContent = '✓ Calibrated';
+  } else {
+    statusEl.className = 'scale-status uncalibrated';
+    statusEl.textContent = '⚠ Not Calibrated';
+  }
+}
+
+function updateInfo() {
+  document.getElementById('info-page').textContent = currentPage + ' of ' + totalPages;
+  document.getElementById('info-file').textContent = fileName || '—';
+  if (pageScales[currentPage]) {
+    const s = pageScales[currentPage];
+    document.getElementById('info-scale').textContent =
+      'Set from ' + s.displayStr + ' reference';
+  } else {
+    document.getElementById('info-scale').textContent = 'Not calibrated';
+  }
+}
+</script>
+</body>
+</html>
