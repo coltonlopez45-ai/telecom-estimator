@@ -419,6 +419,19 @@
 
   #takeoff-modal.show { display: flex; }
 
+  /* LINEAR MODAL */
+  #linear-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #linear-modal.show { display: flex; }
+
   #takeoff-modal-box {
     background: #16213e;
     border: 1px solid #00d4ff;
@@ -548,6 +561,7 @@
         <div class="toolbar-group">
           <label>Takeoff</label>
           <button id="takeoff-btn" onclick="startTakeoff()">📍 Count Items</button>
+          <button id="linear-btn" onclick="startLinear()">📏 Trace Linear</button>
         </div>
 
         <div class="toolbar-group">
@@ -564,6 +578,10 @@
 
       <div id="takeoff-instructions" class="instruction-bar">
         📍 TAKEOFF MODE: Click on items to count them (jacks, outlets, devices, etc.)
+      </div>
+
+      <div id="linear-instructions" class="instruction-bar">
+        📏 LINEAR MODE: Click points to trace a path. Double-click or press Enter to finish.
       </div>
 
       <!-- PDF CANVAS -->
@@ -649,6 +667,37 @@
   </div>
 </div>
 
+<!-- LINEAR ITEM SELECTION MODAL -->
+<div id="linear-modal">
+  <div id="takeoff-modal-box">
+    <h3>📏 What are you tracing?</h3>
+    <p>Select the cable or pathway type before tracing</p>
+    <label>Cable / Pathway Type</label>
+    <select id="linear-item-select">
+      <optgroup label="Copper Cable">
+        <option value="cable-cat6a">Cat6A Cable</option>
+        <option value="cable-cat6">Cat6 Cable</option>
+      </optgroup>
+      <optgroup label="Fiber Cable">
+        <option value="cable-fiber-om3">Fiber Cable OM3 (Multimode)</option>
+        <option value="cable-fiber-om4">Fiber Cable OM4 (Multimode)</option>
+        <option value="cable-fiber-os2">Fiber Cable OS2 (Singlemode)</option>
+      </optgroup>
+      <optgroup label="Conduit & Pathway">
+        <option value="conduit-emt-3-4">3/4" EMT Conduit</option>
+        <option value="conduit-emt-1">1" EMT Conduit</option>
+        <option value="cable-tray-4">4" Cable Tray</option>
+        <option value="cable-tray-6">6" Cable Tray</option>
+        <option value="pathway-jhook">J-Hook Pathway</option>
+      </optgroup>
+    </select>
+    <div class="modal-btns" style="margin-top:20px;">
+      <button class="green" onclick="confirmLinearItem()">✓ Start Tracing</button>
+      <button onclick="cancelLinearItem()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // PDF.js setup
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -668,7 +717,18 @@ const CATALOG_NAMES = {
   'rack-1u': '1U Rack Device',
   'ap-wireless': 'Wireless AP',
   'camera-ip': 'IP Camera',
-  'phone-voip': 'VoIP Outlet'
+  'phone-voip': 'VoIP Outlet',
+  // Linear items
+  'cable-cat6a': 'Cat6A Cable',
+  'cable-cat6': 'Cat6 Cable',
+  'cable-fiber-om3': 'Fiber Cable OM3',
+  'cable-fiber-om4': 'Fiber Cable OM4',
+  'cable-fiber-os2': 'Fiber Cable OS2',
+  'conduit-emt-3-4': '3/4" EMT Conduit',
+  'conduit-emt-1': '1" EMT Conduit',
+  'cable-tray-4': '4" Cable Tray',
+  'cable-tray-6': '6" Cable Tray',
+  'pathway-jhook': 'J-Hook Pathway'
 };
 
 // STATE
@@ -689,6 +749,12 @@ let takeoffMode = false;
 let pendingTakeoffPoint = null;
 let takeoffs = {}; // { pageNum: [{ x, y, itemId, markerNum }] }
 let markerCounter = 0;
+
+// Linear takeoff state
+let linearMode = false;
+let linearPoints = [];
+let linearItemId = null;
+let linears = {}; // { pageNum: [{ points: [{x,y}], itemId, lengthFt }] }
 
 // ─── PDF LOADING ───────────────────────────────────────────
 
@@ -988,20 +1054,33 @@ function renderMarkers() {
 function updateTakeoffSummary() {
   const container = document.getElementById('takeoff-items');
 
-  // Aggregate counts across all pages
+  // Aggregate quantity counts across all pages
   const summary = {};
   for (let pageNum in takeoffs) {
     takeoffs[pageNum].forEach(t => {
       if (!summary[t.itemId]) {
-        summary[t.itemId] = { count: 0, pages: new Set() };
+        summary[t.itemId] = { count: 0, pages: new Set(), type: 'qty' };
       }
       summary[t.itemId].count++;
       summary[t.itemId].pages.add(parseInt(pageNum));
     });
   }
 
+  // Aggregate linear totals across all pages
+  for (let pageNum in linears) {
+    linears[pageNum].forEach(l => {
+      if (!summary[l.itemId]) {
+        summary[l.itemId] = { totalFt: 0, pages: new Set(), type: 'linear' };
+      }
+      if (summary[l.itemId].type === 'linear') {
+        summary[l.itemId].totalFt += l.lengthFt;
+      }
+      summary[l.itemId].pages.add(parseInt(pageNum));
+    });
+  }
+
   if (Object.keys(summary).length === 0) {
-    container.innerHTML = '<div class="empty-takeoff">No takeoffs yet — click "Count Items" to start</div>';
+    container.innerHTML = '<div class="empty-takeoff">No takeoffs yet — click "Count Items" or "Trace Linear" to start</div>';
     return;
   }
 
@@ -1009,13 +1088,24 @@ function updateTakeoffSummary() {
   for (let itemId in summary) {
     const data = summary[itemId];
     const pages = Array.from(data.pages).sort((a,b) => a - b).join(', ');
-    html += `
-      <div class="takeoff-chip">
-        <div class="takeoff-chip-name">${CATALOG_NAMES[itemId] || itemId}</div>
-        <div class="takeoff-chip-count">${data.count}</div>
-        <div class="takeoff-chip-pages">pg ${pages}</div>
-      </div>
-    `;
+    
+    if (data.type === 'qty') {
+      html += `
+        <div class="takeoff-chip">
+          <div class="takeoff-chip-name">${CATALOG_NAMES[itemId] || itemId}</div>
+          <div class="takeoff-chip-count">${data.count}</div>
+          <div class="takeoff-chip-pages">pg ${pages}</div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div class="takeoff-chip">
+          <div class="takeoff-chip-name">${CATALOG_NAMES[itemId] || itemId}</div>
+          <div class="takeoff-chip-count">${Math.round(data.totalFt)} ft</div>
+          <div class="takeoff-chip-pages">pg ${pages}</div>
+        </div>
+      `;
+    }
   }
 
   container.innerHTML = html;
@@ -1053,7 +1143,134 @@ document.getElementById('canvas-wrapper').addEventListener('click', function(e) 
     document.getElementById('takeoff-modal').classList.add('show');
     return;
   }
+
+  // LINEAR MODE
+  if (linearMode && linearItemId) {
+    linearPoints.push({ x, y });
+    drawLinearPath();
+    return;
+  }
 });
+
+// Handle double-click to finish linear trace
+document.getElementById('canvas-wrapper').addEventListener('dblclick', function(e) {
+  if (linearMode && linearItemId && linearPoints.length >= 2) {
+    finishLinear();
+  }
+});
+
+// Handle Enter key to finish linear trace
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && linearMode && linearItemId && linearPoints.length >= 2) {
+    finishLinear();
+  }
+});
+
+// ─── LINEAR TAKEOFF FUNCTIONS ──────────────────────────────
+
+function startLinear() {
+  if (!pdfDoc) { alert('Please upload a PDF first.'); return; }
+  if (calMode) cancelCalibration();
+  if (takeoffMode) endTakeoff();
+  
+  // Show modal to select item first
+  document.getElementById('linear-modal').classList.add('show');
+}
+
+function cancelLinearItem() {
+  document.getElementById('linear-modal').classList.remove('show');
+}
+
+function confirmLinearItem() {
+  const itemId = document.getElementById('linear-item-select').value;
+  if (!itemId) { alert('Please select a cable/pathway type.'); return; }
+
+  linearMode = true;
+  linearItemId = itemId;
+  linearPoints = [];
+  
+  document.getElementById('linear-modal').classList.remove('show');
+  document.getElementById('linear-instructions').style.display = 'block';
+  document.getElementById('linear-btn').classList.add('active');
+}
+
+function endLinear() {
+  linearMode = false;
+  linearItemId = null;
+  linearPoints = [];
+  document.getElementById('linear-instructions').style.display = 'none';
+  document.getElementById('linear-btn').classList.remove('active');
+  clearOverlay();
+}
+
+function drawLinearPath() {
+  const ctx = document.getElementById('overlay-canvas').getContext('2d');
+  clearOverlay();
+
+  if (linearPoints.length === 0) return;
+
+  // Draw all points
+  linearPoints.forEach((p, idx) => {
+    ctx.fillStyle = '#00d4ff';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 9px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(idx + 1, p.x, p.y);
+  });
+
+  // Draw lines
+  if (linearPoints.length > 1) {
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(linearPoints[0].x, linearPoints[0].y);
+    for (let i = 1; i < linearPoints.length; i++) {
+      ctx.lineTo(linearPoints[i].x, linearPoints[i].y);
+    }
+    ctx.stroke();
+  }
+}
+
+function finishLinear() {
+  if (!pageScales[currentPage]) {
+    alert('⚠️ Page not calibrated! Please calibrate the scale first.');
+    endLinear();
+    return;
+  }
+
+  // Calculate total length in pixels
+  let totalPixels = 0;
+  for (let i = 1; i < linearPoints.length; i++) {
+    const dx = linearPoints[i].x - linearPoints[i - 1].x;
+    const dy = linearPoints[i].y - linearPoints[i - 1].y;
+    totalPixels += Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // Convert to feet using scale
+  const scale = pageScales[currentPage];
+  const lengthFt = totalPixels / scale.pixelsPerFoot;
+
+  // Save linear takeoff
+  if (!linears[currentPage]) linears[currentPage] = [];
+  linears[currentPage].push({
+    points: [...linearPoints],
+    itemId: linearItemId,
+    lengthFt: lengthFt
+  });
+
+  alert(`✅ Linear takeoff saved!\n\n${CATALOG_NAMES[linearItemId]}\nLength: ${Math.round(lengthFt)} ft`);
+
+  // Reset for next trace
+  linearPoints = [];
+  clearOverlay();
+  updateTakeoffSummary();
+
+  // Stay in linear mode so user can trace more
+}
 
 // ─── SIDEBAR TOGGLE ────────────────────────────────────────
 
