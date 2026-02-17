@@ -225,7 +225,7 @@
   }
 
   #upload-screen.hidden { display: none; }
-  #viewer-wrap { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+  #viewer-wrap { display: none; flex: 1; overflow: hidden; }
   #viewer-wrap.visible { display: flex; }
 
   #drop-zone {
@@ -311,8 +311,8 @@
   #page-info span { color: #ccc; }
   #page-info .sep { color: #2a2a4a; }
 
-  /* CALIBRATION INSTRUCTIONS */
-  #cal-instructions {
+  /* INSTRUCTIONS */
+  .instruction-bar {
     display: none;
     position: fixed;
     top: 80px;
@@ -336,6 +336,144 @@
     min-width: 40px;
     text-align: center;
   }
+
+  /* RIGHT SIDEBAR - TAKEOFF PANEL */
+  #takeoff-panel {
+    width: 320px;
+    background: #16213e;
+    border-left: 1px solid #2a2a4a;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow-y: auto;
+  }
+
+  #takeoff-panel h3 {
+    padding: 12px 15px;
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    color: #888;
+    text-transform: uppercase;
+    border-bottom: 1px solid #2a2a4a;
+  }
+
+  #takeoff-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+  }
+
+  .takeoff-item {
+    background: #0f3460;
+    border: 1px solid #2a4a7a;
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 8px;
+  }
+
+  .takeoff-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .takeoff-item-name {
+    font-size: 0.85rem;
+    color: #00d4ff;
+    font-weight: bold;
+  }
+
+  .takeoff-item-count {
+    font-size: 1rem;
+    color: #00ff88;
+    font-weight: bold;
+  }
+
+  .takeoff-item-page {
+    font-size: 0.7rem;
+    color: #888;
+  }
+
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #555;
+    font-size: 0.85rem;
+  }
+
+  /* TAKEOFF MODAL */
+  #takeoff-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #takeoff-modal.show { display: flex; }
+
+  #takeoff-modal-box {
+    background: #16213e;
+    border: 1px solid #00d4ff;
+    border-radius: 8px;
+    padding: 25px;
+    width: 400px;
+  }
+
+  #takeoff-modal-box h3 {
+    color: #00d4ff;
+    margin-bottom: 6px;
+    font-size: 1.1rem;
+  }
+
+  #takeoff-modal-box p {
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-bottom: 18px;
+  }
+
+  #takeoff-modal-box label {
+    display: block;
+    font-size: 0.75rem;
+    color: #ccc;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  #takeoff-modal-box select {
+    width: 100%;
+    margin-bottom: 20px;
+    padding: 8px;
+  }
+
+  /* MARKER STYLES */
+  .marker {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    background: #00ff88;
+    border: 2px solid #000;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: bold;
+    color: #000;
+    cursor: pointer;
+    pointer-events: auto;
+    box-shadow: 0 2px 8px rgba(0,255,136,0.5);
+  }
+
+  .marker:hover {
+    background: #00d4ff;
+    box-shadow: 0 2px 12px rgba(0,212,255,0.7);
+  }
 </style>
 </head>
 <body>
@@ -343,12 +481,12 @@
 <!-- TOP BAR -->
 <div id="topbar">
   <h1>⚡ TELECOMEST PRO</h1>
-  <span>PHASE 1 — PDF VIEWER & SCALE CALIBRATION</span>
+  <span>PHASE 1 — PDF VIEWER & QUANTITY TAKEOFF</span>
 </div>
 
 <div id="main">
 
-  <!-- SIDEBAR -->
+  <!-- LEFT SIDEBAR -->
   <div id="sidebar">
     <h3>Pages</h3>
     <div id="page-thumbnails"></div>
@@ -396,14 +534,23 @@
         </div>
 
         <div class="toolbar-group">
+          <label>Takeoff</label>
+          <button id="takeoff-btn" onclick="startTakeoff()">📍 Count Items</button>
+        </div>
+
+        <div class="toolbar-group">
           <button onclick="document.getElementById('file-input').click()" style="font-size:0.75rem;">📂 New PDF</button>
         </div>
 
       </div>
 
-      <!-- CALIBRATION INSTRUCTION BAR -->
-      <div id="cal-instructions">
+      <!-- INSTRUCTION BARS -->
+      <div id="cal-instructions" class="instruction-bar">
         📐 CALIBRATION MODE: Click two points on the drawing that represent a known distance
+      </div>
+
+      <div id="takeoff-instructions" class="instruction-bar">
+        📍 TAKEOFF MODE: Click on items to count them (jacks, outlets, devices, etc.)
       </div>
 
       <!-- PDF CANVAS -->
@@ -411,6 +558,7 @@
         <div id="canvas-wrapper">
           <canvas id="pdf-canvas"></canvas>
           <canvas id="overlay-canvas"></canvas>
+          <div id="markers-container"></div>
         </div>
       </div>
 
@@ -426,6 +574,17 @@
     </div><!-- /viewer-wrap -->
 
   </div><!-- /viewer-area -->
+
+  <!-- RIGHT SIDEBAR - TAKEOFF SUMMARY -->
+  <div id="takeoff-panel">
+    <h3>Takeoff Summary</h3>
+    <div id="takeoff-list">
+      <div class="empty-state">
+        No takeoffs yet.<br>Click "Count Items" to start.
+      </div>
+    </div>
+  </div>
+
 </div><!-- /main -->
 
 <!-- CALIBRATION MODAL -->
@@ -450,9 +609,64 @@
   </div>
 </div>
 
+<!-- TAKEOFF ITEM SELECTION MODAL -->
+<div id="takeoff-modal">
+  <div id="takeoff-modal-box">
+    <h3>📍 What are you counting?</h3>
+    <p>Select the catalog item for this takeoff point</p>
+    <label>Item Type</label>
+    <select id="takeoff-item-select">
+      <optgroup label="Copper - Horizontal">
+        <option value="cat6a-jack">Cat6A Jack / Outlet</option>
+        <option value="cat6-jack">Cat6 Jack / Outlet</option>
+        <option value="cat5e-jack">Cat5e Jack / Outlet</option>
+      </optgroup>
+      <optgroup label="Fiber - Connectors">
+        <option value="fiber-sc">Fiber SC Connector</option>
+        <option value="fiber-lc">Fiber LC Duplex Connector</option>
+        <option value="fiber-mpo">Fiber MPO/MTP Connector</option>
+      </optgroup>
+      <optgroup label="Equipment & Hardware">
+        <option value="faceplate-2port">2-Port Faceplate</option>
+        <option value="faceplate-4port">4-Port Faceplate</option>
+        <option value="patch-panel-24">24-Port Patch Panel</option>
+        <option value="patch-panel-48">48-Port Patch Panel</option>
+        <option value="rack-1u">1U Rack Mount Device</option>
+      </optgroup>
+      <optgroup label="Devices">
+        <option value="ap-wireless">Wireless Access Point</option>
+        <option value="camera-ip">IP Camera</option>
+        <option value="phone-voip">VoIP Phone Outlet</option>
+      </optgroup>
+    </select>
+    <div class="modal-btns" style="margin-top:20px;">
+      <button class="green" onclick="confirmTakeoffItem()">✓ Add Point</button>
+      <button onclick="cancelTakeoffItem()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // PDF.js setup
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// Catalog item names
+const CATALOG_NAMES = {
+  'cat6a-jack': 'Cat6A Jack',
+  'cat6-jack': 'Cat6 Jack',
+  'cat5e-jack': 'Cat5e Jack',
+  'fiber-sc': 'Fiber SC Connector',
+  'fiber-lc': 'Fiber LC Connector',
+  'fiber-mpo': 'Fiber MPO Connector',
+  'faceplate-2port': '2-Port Faceplate',
+  'faceplate-4port': '4-Port Faceplate',
+  'patch-panel-24': '24-Port Patch Panel',
+  'patch-panel-48': '48-Port Patch Panel',
+  'rack-1u': '1U Rack Device',
+  'ap-wireless': 'Wireless AP',
+  'camera-ip': 'IP Camera',
+  'phone-voip': 'VoIP Outlet'
+};
 
 // STATE
 let pdfDoc = null;
@@ -462,10 +676,16 @@ let zoomLevel = 1.0;
 let fileName = '';
 
 // Scale calibration state per page
-let pageScales = {};       // { pageNum: pixelsPerFoot }
+let pageScales = {};
 let calMode = false;
 let calPoints = [];
 let calPixelDistance = 0;
+
+// Takeoff state
+let takeoffMode = false;
+let pendingTakeoffPoint = null;
+let takeoffs = {}; // { pageNum: [{ x, y, itemId, markerNum }] }
+let markerCounter = 0;
 
 // ─── PDF LOADING ───────────────────────────────────────────
 
@@ -502,14 +722,10 @@ async function loadPDF(arrayBuffer) {
   totalPages = pdfDoc.numPages;
   currentPage = 1;
 
-  // Show viewer
   document.getElementById('upload-screen').classList.add('hidden');
   document.getElementById('viewer-wrap').classList.add('visible');
 
-  // Build thumbnails
   await buildThumbnails();
-
-  // Render first page
   await renderPage(currentPage);
   updateInfo();
 }
@@ -551,13 +767,13 @@ async function renderPage(pageNum) {
 
   await page.render({ canvasContext: ctx, viewport }).promise;
 
-  // Update thumbnail highlight
   document.querySelectorAll('.thumb').forEach(t => t.classList.remove('active'));
   const activeThumb = document.getElementById('thumb-' + pageNum);
   if (activeThumb) activeThumb.classList.add('active');
 
   document.getElementById('page-num').textContent = pageNum + ' / ' + totalPages;
   updateScaleStatus();
+  renderMarkers();
 }
 
 // ─── NAVIGATION ────────────────────────────────────────────
@@ -568,12 +784,14 @@ async function changePage(dir) {
   currentPage = newPage;
   await renderPage(currentPage);
   updateInfo();
+  updateTakeoffSummary();
 }
 
 async function goToPage(num) {
   currentPage = num;
   await renderPage(currentPage);
   updateInfo();
+  updateTakeoffSummary();
 }
 
 // ─── ZOOM ──────────────────────────────────────────────────
@@ -600,6 +818,7 @@ async function fitToWindow() {
 
 function startCalibration() {
   if (!pdfDoc) { alert('Please upload a PDF first.'); return; }
+  if (takeoffMode) endTakeoff();
   calMode = true;
   calPoints = [];
   document.getElementById('cal-instructions').style.display = 'block';
@@ -616,34 +835,6 @@ function cancelCalibration() {
   document.getElementById('cal-btn').classList.remove('active');
   clearOverlay();
 }
-
-// Canvas click handler
-document.getElementById('canvas-wrapper').addEventListener('click', function(e) {
-  if (!calMode) return;
-
-  const rect = document.getElementById('pdf-canvas').getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-
-  calPoints.push({ x, y });
-  drawCalPoint(x, y, calPoints.length);
-
-  if (calPoints.length === 2) {
-    // Calculate pixel distance
-    const dx = calPoints[1].x - calPoints[0].x;
-    const dy = calPoints[1].y - calPoints[0].y;
-    calPixelDistance = Math.sqrt(dx * dx + dy * dy);
-
-    // Draw line between points
-    drawCalLine();
-
-    // Show modal
-    document.getElementById('cal-instructions').style.display = 'none';
-    document.getElementById('cal-modal').classList.add('show');
-    document.getElementById('cal-result').textContent =
-      'Pixel distance: ' + Math.round(calPixelDistance) + 'px between your two points';
-  }
-});
 
 function drawCalPoint(x, y, num) {
   const ctx = document.getElementById('overlay-canvas').getContext('2d');
@@ -680,12 +871,10 @@ function confirmCalibration() {
   const unit = document.getElementById('cal-unit').value;
   if (!dist || dist <= 0) { alert('Please enter a valid distance.'); return; }
 
-  // Convert everything to feet for internal storage
   let distInFeet = dist;
   if (unit === 'in') distInFeet = dist / 12;
   if (unit === 'm') distInFeet = dist * 3.28084;
 
-  // Pixels per foot at current zoom level
   const pixelsPerFoot = calPixelDistance / distInFeet;
 
   pageScales[currentPage] = {
@@ -701,16 +890,16 @@ function confirmCalibration() {
   updateScaleStatus();
   updateInfo();
 
-  alert('✅ Scale set! This page is now calibrated.\n\nLinear measurements will be accurate for Page ' + currentPage + '.');
+  alert('✅ Scale set! Page ' + currentPage + ' is now calibrated.');
 }
 
 function updateScaleStatus() {
   const statusEl = document.getElementById('scale-status');
   if (pageScales[currentPage]) {
-    statusEl.className = 'scale-status calibrated';
+    statusEl.className = 'calibrated';
     statusEl.textContent = '✓ Calibrated';
   } else {
-    statusEl.className = 'scale-status uncalibrated';
+    statusEl.className = 'uncalibrated';
     statusEl.textContent = '⚠ Not Calibrated';
   }
 }
@@ -720,12 +909,150 @@ function updateInfo() {
   document.getElementById('info-file').textContent = fileName || '—';
   if (pageScales[currentPage]) {
     const s = pageScales[currentPage];
-    document.getElementById('info-scale').textContent =
-      'Set from ' + s.displayStr + ' reference';
+    document.getElementById('info-scale').textContent = 'Set from ' + s.displayStr + ' reference';
   } else {
     document.getElementById('info-scale').textContent = 'Not calibrated';
   }
 }
+
+// ─── TAKEOFF MODE ──────────────────────────────────────────
+
+function startTakeoff() {
+  if (!pdfDoc) { alert('Please upload a PDF first.'); return; }
+  if (calMode) cancelCalibration();
+  takeoffMode = true;
+  document.getElementById('takeoff-instructions').style.display = 'block';
+  document.getElementById('canvas-wrapper').style.cursor = 'crosshair';
+  document.getElementById('takeoff-btn').classList.add('active');
+}
+
+function endTakeoff() {
+  takeoffMode = false;
+  document.getElementById('takeoff-instructions').style.display = 'none';
+  document.getElementById('takeoff-btn').classList.remove('active');
+}
+
+function cancelTakeoffItem() {
+  pendingTakeoffPoint = null;
+  document.getElementById('takeoff-modal').classList.remove('show');
+  if (takeoffMode) {
+    document.getElementById('takeoff-instructions').style.display = 'block';
+  }
+}
+
+function confirmTakeoffItem() {
+  const itemId = document.getElementById('takeoff-item-select').value;
+  if (!itemId) { alert('Please select an item type.'); return; }
+
+  if (!takeoffs[currentPage]) takeoffs[currentPage] = [];
+
+  markerCounter++;
+  takeoffs[currentPage].push({
+    x: pendingTakeoffPoint.x,
+    y: pendingTakeoffPoint.y,
+    itemId,
+    markerNum: markerCounter
+  });
+
+  document.getElementById('takeoff-modal').classList.remove('show');
+  pendingTakeoffPoint = null;
+
+  renderMarkers();
+  updateTakeoffSummary();
+
+  if (takeoffMode) {
+    document.getElementById('takeoff-instructions').style.display = 'block';
+  }
+}
+
+function renderMarkers() {
+  const container = document.getElementById('markers-container');
+  container.innerHTML = '';
+
+  if (!takeoffs[currentPage]) return;
+
+  takeoffs[currentPage].forEach(t => {
+    const marker = document.createElement('div');
+    marker.className = 'marker';
+    marker.style.left = t.x + 'px';
+    marker.style.top = t.y + 'px';
+    marker.textContent = t.markerNum;
+    marker.title = CATALOG_NAMES[t.itemId] || t.itemId;
+    container.appendChild(marker);
+  });
+}
+
+function updateTakeoffSummary() {
+  const listEl = document.getElementById('takeoff-list');
+
+  // Aggregate counts across all pages
+  const summary = {};
+  for (let pageNum in takeoffs) {
+    takeoffs[pageNum].forEach(t => {
+      if (!summary[t.itemId]) {
+        summary[t.itemId] = { count: 0, pages: new Set() };
+      }
+      summary[t.itemId].count++;
+      summary[t.itemId].pages.add(parseInt(pageNum));
+    });
+  }
+
+  if (Object.keys(summary).length === 0) {
+    listEl.innerHTML = '<div class="empty-state">No takeoffs yet.<br>Click "Count Items" to start.</div>';
+    return;
+  }
+
+  let html = '';
+  for (let itemId in summary) {
+    const data = summary[itemId];
+    const pages = Array.from(data.pages).sort((a,b) => a - b).join(', ');
+    html += `
+      <div class="takeoff-item">
+        <div class="takeoff-item-header">
+          <div class="takeoff-item-name">${CATALOG_NAMES[itemId] || itemId}</div>
+          <div class="takeoff-item-count">${data.count}</div>
+        </div>
+        <div class="takeoff-item-page">Pages: ${pages}</div>
+      </div>
+    `;
+  }
+
+  listEl.innerHTML = html;
+}
+
+// ─── CANVAS CLICK HANDLER ──────────────────────────────────
+
+document.getElementById('canvas-wrapper').addEventListener('click', function(e) {
+  const rect = document.getElementById('pdf-canvas').getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+
+  // CALIBRATION MODE
+  if (calMode) {
+    calPoints.push({ x, y });
+    drawCalPoint(x, y, calPoints.length);
+
+    if (calPoints.length === 2) {
+      const dx = calPoints[1].x - calPoints[0].x;
+      const dy = calPoints[1].y - calPoints[0].y;
+      calPixelDistance = Math.sqrt(dx * dx + dy * dy);
+      drawCalLine();
+      document.getElementById('cal-instructions').style.display = 'none';
+      document.getElementById('cal-modal').classList.add('show');
+      document.getElementById('cal-result').textContent =
+        'Pixel distance: ' + Math.round(calPixelDistance) + 'px between your two points';
+    }
+    return;
+  }
+
+  // TAKEOFF MODE
+  if (takeoffMode) {
+    pendingTakeoffPoint = { x, y };
+    document.getElementById('takeoff-instructions').style.display = 'none';
+    document.getElementById('takeoff-modal').classList.add('show');
+    return;
+  }
+});
 </script>
 </body>
 </html>
