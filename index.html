@@ -40,6 +40,68 @@
     letter-spacing: 1px;
   }
 
+  /* TAKEOFF SUMMARY BAR - NOW HORIZONTAL AT TOP */
+  #takeoff-bar {
+    background: #16213e;
+    border-bottom: 1px solid #2a2a4a;
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-shrink: 0;
+    overflow-x: auto;
+    max-height: 60px;
+  }
+
+  #takeoff-bar-label {
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    color: #888;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  #takeoff-items {
+    display: flex;
+    gap: 15px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+
+  .takeoff-chip {
+    background: #0f3460;
+    border: 1px solid #2a4a7a;
+    border-radius: 20px;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .takeoff-chip-name {
+    font-size: 0.8rem;
+    color: #00d4ff;
+  }
+
+  .takeoff-chip-count {
+    font-size: 0.85rem;
+    color: #00ff88;
+    font-weight: bold;
+  }
+
+  .takeoff-chip-pages {
+    font-size: 0.65rem;
+    color: #888;
+  }
+
+  .empty-takeoff {
+    font-size: 0.75rem;
+    color: #555;
+    font-style: italic;
+  }
+
   /* MAIN LAYOUT */
   #main {
     display: flex;
@@ -49,7 +111,7 @@
 
   /* LEFT SIDEBAR */
   #sidebar {
-    width: 160px;
+    width: 140px;
     background: #16213e;
     border-right: 1px solid #2a2a4a;
     display: flex;
@@ -60,14 +122,14 @@
   }
 
   #sidebar.hidden {
-    margin-left: -160px;
+    margin-left: -140px;
     width: 0;
     overflow: hidden;
   }
 
   #sidebar h3 {
-    padding: 12px 15px;
-    font-size: 0.7rem;
+    padding: 12px 10px;
+    font-size: 0.65rem;
     letter-spacing: 2px;
     color: #888;
     text-transform: uppercase;
@@ -75,20 +137,20 @@
   }
 
   #page-thumbnails {
-    padding: 10px;
+    padding: 8px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 
   .thumb {
     background: #0f3460;
     border: 2px solid #2a2a4a;
     border-radius: 4px;
-    padding: 8px;
+    padding: 6px;
     cursor: pointer;
     text-align: center;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: #aaa;
     transition: all 0.2s;
   }
@@ -232,7 +294,7 @@
   }
 
   #upload-screen.hidden { display: none; }
-  #viewer-wrap { display: none; flex: 1; overflow: hidden; }
+  #viewer-wrap { display: none; flex: 1; flex-direction: column; overflow: hidden; }
   #viewer-wrap.visible { display: flex; }
 
   #drop-zone {
@@ -322,7 +384,7 @@
   .instruction-bar {
     display: none;
     position: fixed;
-    top: 80px;
+    top: 135px;
     left: 50%;
     transform: translateX(-50%);
     background: #ffaa00;
@@ -342,78 +404,6 @@
     color: #00d4ff;
     min-width: 40px;
     text-align: center;
-  }
-
-  /* RIGHT SIDEBAR - TAKEOFF PANEL */
-  #takeoff-panel {
-    width: 280px;
-    background: #16213e;
-    border-left: 1px solid #2a2a4a;
-    display: flex;
-    flex-direction: column;
-    flex-shrink: 0;
-    overflow-y: auto;
-    transition: margin-right 0.3s ease, width 0.3s ease;
-  }
-
-  #takeoff-panel.hidden {
-    margin-right: -280px;
-    width: 0;
-    overflow: hidden;
-  }
-
-  #takeoff-panel h3 {
-    padding: 12px 15px;
-    font-size: 0.7rem;
-    letter-spacing: 2px;
-    color: #888;
-    text-transform: uppercase;
-    border-bottom: 1px solid #2a2a4a;
-  }
-
-  #takeoff-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-  }
-
-  .takeoff-item {
-    background: #0f3460;
-    border: 1px solid #2a4a7a;
-    border-radius: 4px;
-    padding: 10px;
-    margin-bottom: 8px;
-  }
-
-  .takeoff-item-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
-  }
-
-  .takeoff-item-name {
-    font-size: 0.85rem;
-    color: #00d4ff;
-    font-weight: bold;
-  }
-
-  .takeoff-item-count {
-    font-size: 1rem;
-    color: #00ff88;
-    font-weight: bold;
-  }
-
-  .takeoff-item-page {
-    font-size: 0.7rem;
-    color: #888;
-  }
-
-  .empty-state {
-    padding: 40px 20px;
-    text-align: center;
-    color: #555;
-    font-size: 0.85rem;
   }
 
   /* TAKEOFF MODAL */
@@ -498,6 +488,14 @@
   <span>PHASE 1 — PDF VIEWER & QUANTITY TAKEOFF</span>
 </div>
 
+<!-- TAKEOFF SUMMARY BAR -->
+<div id="takeoff-bar">
+  <div id="takeoff-bar-label">TAKEOFF SUMMARY:</div>
+  <div id="takeoff-items">
+    <div class="empty-takeoff">No takeoffs yet — click "Count Items" to start</div>
+  </div>
+</div>
+
 <div id="main">
 
   <!-- LEFT SIDEBAR -->
@@ -554,7 +552,7 @@
 
         <div class="toolbar-group">
           <button onclick="document.getElementById('file-input').click()" style="font-size:0.75rem;">📂 New PDF</button>
-          <button onclick="toggleSidebars()" style="font-size:0.75rem;" title="Hide/show sidebars for full screen">⬌ Toggle Panels</button>
+          <button onclick="toggleSidebar()" style="font-size:0.75rem;" title="Hide/show page thumbnails">⬌ Pages</button>
         </div>
 
       </div>
@@ -589,16 +587,6 @@
     </div><!-- /viewer-wrap -->
 
   </div><!-- /viewer-area -->
-
-  <!-- RIGHT SIDEBAR - TAKEOFF SUMMARY -->
-  <div id="takeoff-panel">
-    <h3>Takeoff Summary</h3>
-    <div id="takeoff-list">
-      <div class="empty-state">
-        No takeoffs yet.<br>Click "Count Items" to start.
-      </div>
-    </div>
-  </div>
 
 </div><!-- /main -->
 
@@ -761,7 +749,7 @@ async function buildThumbnails() {
     thumb.className = 'thumb' + (i === 1 ? ' active' : '');
     thumb.id = 'thumb-' + i;
     thumb.appendChild(thumbCanvas);
-    thumb.appendChild(document.createTextNode('Page ' + i));
+    thumb.appendChild(document.createTextNode('Pg ' + i));
     thumb.onclick = () => goToPage(i);
     container.appendChild(thumb);
   }
@@ -998,7 +986,7 @@ function renderMarkers() {
 }
 
 function updateTakeoffSummary() {
-  const listEl = document.getElementById('takeoff-list');
+  const container = document.getElementById('takeoff-items');
 
   // Aggregate counts across all pages
   const summary = {};
@@ -1013,7 +1001,7 @@ function updateTakeoffSummary() {
   }
 
   if (Object.keys(summary).length === 0) {
-    listEl.innerHTML = '<div class="empty-state">No takeoffs yet.<br>Click "Count Items" to start.</div>';
+    container.innerHTML = '<div class="empty-takeoff">No takeoffs yet — click "Count Items" to start</div>';
     return;
   }
 
@@ -1022,17 +1010,15 @@ function updateTakeoffSummary() {
     const data = summary[itemId];
     const pages = Array.from(data.pages).sort((a,b) => a - b).join(', ');
     html += `
-      <div class="takeoff-item">
-        <div class="takeoff-item-header">
-          <div class="takeoff-item-name">${CATALOG_NAMES[itemId] || itemId}</div>
-          <div class="takeoff-item-count">${data.count}</div>
-        </div>
-        <div class="takeoff-item-page">Pages: ${pages}</div>
+      <div class="takeoff-chip">
+        <div class="takeoff-chip-name">${CATALOG_NAMES[itemId] || itemId}</div>
+        <div class="takeoff-chip-count">${data.count}</div>
+        <div class="takeoff-chip-pages">pg ${pages}</div>
       </div>
     `;
   }
 
-  listEl.innerHTML = html;
+  container.innerHTML = html;
 }
 
 // ─── CANVAS CLICK HANDLER ──────────────────────────────────
@@ -1071,19 +1057,16 @@ document.getElementById('canvas-wrapper').addEventListener('click', function(e) 
 
 // ─── SIDEBAR TOGGLE ────────────────────────────────────────
 
-let sidebarsVisible = true;
+let sidebarVisible = true;
 
-function toggleSidebars() {
-  sidebarsVisible = !sidebarsVisible;
+function toggleSidebar() {
+  sidebarVisible = !sidebarVisible;
   const sidebar = document.getElementById('sidebar');
-  const takeoffPanel = document.getElementById('takeoff-panel');
   
-  if (sidebarsVisible) {
+  if (sidebarVisible) {
     sidebar.classList.remove('hidden');
-    takeoffPanel.classList.remove('hidden');
   } else {
     sidebar.classList.add('hidden');
-    takeoffPanel.classList.add('hidden');
   }
 }
 </script>
