@@ -432,6 +432,19 @@
 
   #linear-modal.show { display: flex; }
 
+  /* AVERAGE CONFIG MODAL */
+  #avg-config-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #avg-config-modal.show { display: flex; }
+
   #takeoff-modal-box {
     background: #16213e;
     border: 1px solid #00d4ff;
@@ -491,6 +504,65 @@
     background: #00d4ff;
     box-shadow: 0 2px 12px rgba(0,212,255,0.7);
   }
+
+  /* AVERAGE RUNS TRACKER */
+  #avg-runs-panel {
+    display: none;
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    background: #16213e;
+    border: 2px solid #00d4ff;
+    border-radius: 8px;
+    padding: 15px 20px;
+    min-width: 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    z-index: 50;
+  }
+
+  #avg-runs-panel h4 {
+    color: #00d4ff;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+
+  #avg-runs-list {
+    margin-bottom: 12px;
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .avg-run-item {
+    font-size: 0.8rem;
+    color: #ccc;
+    padding: 4px 0;
+    border-bottom: 1px solid #2a2a4a;
+  }
+
+  .avg-run-item:last-child {
+    border-bottom: none;
+  }
+
+  #avg-summary {
+    font-size: 0.85rem;
+    color: #00ff88;
+    margin-bottom: 12px;
+    padding: 8px;
+    background: #0a2040;
+    border-radius: 4px;
+  }
+
+  .avg-btns {
+    display: flex;
+    gap: 8px;
+  }
+
+  .avg-btns button {
+    flex: 1;
+    font-size: 0.75rem;
+    padding: 8px 10px;
+  }
 </style>
 </head>
 <body>
@@ -498,7 +570,7 @@
 <!-- TOP BAR -->
 <div id="topbar">
   <h1>⚡ TELECOMEST PRO</h1>
-  <span>PHASE 1 — PDF VIEWER & QUANTITY TAKEOFF</span>
+  <span id="version-display">PHASE 1 — PDF VIEWER & QUANTITY TAKEOFF — <span style="color:#00ff88"></span></span>
 </div>
 
 <!-- TAKEOFF SUMMARY BAR -->
@@ -561,7 +633,8 @@
         <div class="toolbar-group">
           <label>Takeoff</label>
           <button id="takeoff-btn" onclick="startTakeoff()">📍 Count Items</button>
-          <button id="linear-btn" onclick="startLinear()">📏 Trace Linear</button>
+          <button id="linear-btn" onclick="startLinear('straight')">📏 Linear</button>
+          <button id="avg-btn" onclick="startLinear('average')">📐 Avg + Drops</button>
         </div>
 
         <div class="toolbar-group">
@@ -581,7 +654,11 @@
       </div>
 
       <div id="linear-instructions" class="instruction-bar">
-        📏 LINEAR MODE: Click points to trace a path. Double-click or press Enter to finish.
+        📏 LINEAR MODE: Click points to trace. Hold SHIFT for horizontal/vertical/45° snap. Double-click or Enter to finish.
+      </div>
+
+      <div id="average-instructions" class="instruction-bar">
+        📐 AVERAGE MODE: Trace sample runs (hold SHIFT to snap). After each: click "Add Another Run" or "Finish & Calculate"
       </div>
 
       <!-- PDF CANVAS -->
@@ -698,9 +775,50 @@
   </div>
 </div>
 
+<!-- AVERAGE RUNS TRACKER PANEL -->
+<div id="avg-runs-panel">
+  <h4>📐 SAMPLE RUNS</h4>
+  <div id="avg-runs-list"></div>
+  <div id="avg-summary"></div>
+  <div class="avg-btns">
+    <button onclick="addAnotherRun()">+ Another Run</button>
+    <button class="green" onclick="finishAverage()">✓ Finish & Calculate</button>
+  </div>
+</div>
+
+<!-- AVERAGE DROP CONFIGURATION MODAL -->
+<div id="avg-config-modal">
+  <div id="takeoff-modal-box">
+    <h3>📐 Configure Drops</h3>
+    <p>Set the total number of drops and drop length</p>
+    
+    <label>Total Number of Drops</label>
+    <input type="number" id="avg-drop-count" placeholder="e.g. 50" min="1" step="1" style="width:100%; margin-bottom:15px;">
+    
+    <label>Drop Length (ft)</label>
+    <input type="number" id="avg-drop-length" placeholder="e.g. 12" min="0" step="0.5" style="width:100%; margin-bottom:20px;">
+    
+    <div id="avg-calc-preview" style="font-size:0.85rem; color:#00ff88; margin-bottom:15px; padding:10px; background:#0a2040; border-radius:4px;"></div>
+    
+    <div class="modal-btns">
+      <button class="green" onclick="confirmAverageConfig()">✓ Save Takeoff</button>
+      <button onclick="cancelAverageConfig()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // PDF.js setup
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+// VERSION - Update this after each change
+const APP_VERSION = 'v1.2';
+
+// Update version display on page load
+document.addEventListener('DOMContentLoaded', function() {
+  const versionSpan = document.querySelector('#version-display span');
+  if (versionSpan) versionSpan.textContent = APP_VERSION;
+});
 
 // Catalog item names
 const CATALOG_NAMES = {
@@ -752,9 +870,15 @@ let markerCounter = 0;
 
 // Linear takeoff state
 let linearMode = false;
+let linearModeType = null; // 'straight' or 'average'
 let linearPoints = [];
 let linearItemId = null;
-let linears = {}; // { pageNum: [{ points: [{x,y}], itemId, lengthFt }] }
+let linears = {}; // { pageNum: [{ points: [{x,y}], itemId, lengthFt, type }] }
+let averageRuns = []; // For average mode: array of {lengthFt} for each traced run
+let avgDropCount = 0;
+let avgDropLength = 0;
+let mousePos = { x: 0, y: 0 }; // Track mouse position for live preview
+let shiftPressed = false; // Track shift key for axis snapping
 
 // ─── PDF LOADING ───────────────────────────────────────────
 
@@ -1159,6 +1283,58 @@ document.getElementById('canvas-wrapper').addEventListener('dblclick', function(
   }
 });
 
+// Handle mousemove for live line preview
+document.getElementById('canvas-wrapper').addEventListener('mousemove', function(e) {
+  if (!linearMode || !linearItemId) return;
+  
+  const rect = document.getElementById('pdf-canvas').getBoundingClientRect();
+  let x = e.clientX - rect.left;
+  let y = e.clientY - rect.top;
+  
+  // If we have at least one point and shift is pressed, snap to axis
+  if (linearPoints.length > 0 && shiftPressed) {
+    const lastPoint = linearPoints[linearPoints.length - 1];
+    const dx = Math.abs(x - lastPoint.x);
+    const dy = Math.abs(y - lastPoint.y);
+    
+    // Determine if horizontal, vertical, or 45-degree
+    if (dx > dy * 2) {
+      // Snap to horizontal
+      y = lastPoint.y;
+    } else if (dy > dx * 2) {
+      // Snap to vertical
+      x = lastPoint.x;
+    } else {
+      // Snap to 45-degree
+      const dist = Math.min(dx, dy);
+      x = lastPoint.x + (x > lastPoint.x ? dist : -dist);
+      y = lastPoint.y + (y > lastPoint.y ? dist : -dist);
+    }
+  }
+  
+  mousePos = { x, y };
+  drawLinearPath();
+});
+
+// Track shift key state
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Shift') {
+    shiftPressed = true;
+    if (linearMode && linearPoints.length > 0) {
+      drawLinearPath(); // Redraw with snapping
+    }
+  }
+});
+
+document.addEventListener('keyup', function(e) {
+  if (e.key === 'Shift') {
+    shiftPressed = false;
+    if (linearMode && linearPoints.length > 0) {
+      drawLinearPath(); // Redraw without snapping
+    }
+  }
+});
+
 // Handle Enter key to finish linear trace
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && linearMode && linearItemId && linearPoints.length >= 2) {
@@ -1168,10 +1344,12 @@ document.addEventListener('keydown', function(e) {
 
 // ─── LINEAR TAKEOFF FUNCTIONS ──────────────────────────────
 
-function startLinear() {
+function startLinear(mode) {
   if (!pdfDoc) { alert('Please upload a PDF first.'); return; }
   if (calMode) cancelCalibration();
   if (takeoffMode) endTakeoff();
+  
+  linearModeType = mode;
   
   // Show modal to select item first
   document.getElementById('linear-modal').classList.add('show');
@@ -1179,6 +1357,7 @@ function startLinear() {
 
 function cancelLinearItem() {
   document.getElementById('linear-modal').classList.remove('show');
+  linearModeType = null;
 }
 
 function confirmLinearItem() {
@@ -1189,17 +1368,31 @@ function confirmLinearItem() {
   linearItemId = itemId;
   linearPoints = [];
   
+  if (linearModeType === 'average') {
+    averageRuns = [];
+    document.getElementById('avg-runs-panel').style.display = 'block';
+    updateAvgRunsDisplay();
+    document.getElementById('average-instructions').style.display = 'block';
+    document.getElementById('avg-btn').classList.add('active');
+  } else {
+    document.getElementById('linear-instructions').style.display = 'block';
+    document.getElementById('linear-btn').classList.add('active');
+  }
+  
   document.getElementById('linear-modal').classList.remove('show');
-  document.getElementById('linear-instructions').style.display = 'block';
-  document.getElementById('linear-btn').classList.add('active');
 }
 
 function endLinear() {
   linearMode = false;
+  linearModeType = null;
   linearItemId = null;
   linearPoints = [];
+  averageRuns = [];
   document.getElementById('linear-instructions').style.display = 'none';
+  document.getElementById('average-instructions').style.display = 'none';
+  document.getElementById('avg-runs-panel').style.display = 'none';
   document.getElementById('linear-btn').classList.remove('active');
+  document.getElementById('avg-btn').classList.remove('active');
   clearOverlay();
 }
 
@@ -1209,7 +1402,7 @@ function drawLinearPath() {
 
   if (linearPoints.length === 0) return;
 
-  // Draw all points
+  // Draw all confirmed points
   linearPoints.forEach((p, idx) => {
     ctx.fillStyle = '#00d4ff';
     ctx.beginPath();
@@ -1222,7 +1415,7 @@ function drawLinearPath() {
     ctx.fillText(idx + 1, p.x, p.y);
   });
 
-  // Draw lines
+  // Draw confirmed lines between points
   if (linearPoints.length > 1) {
     ctx.strokeStyle = '#00d4ff';
     ctx.lineWidth = 3;
@@ -1233,6 +1426,51 @@ function drawLinearPath() {
     }
     ctx.stroke();
   }
+
+  // Draw live preview line from last point to mouse
+  if (linearPoints.length > 0 && mousePos.x && mousePos.y) {
+    const lastPoint = linearPoints[linearPoints.length - 1];
+    
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.4)'; // Semi-transparent
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); // Dashed line
+    ctx.beginPath();
+    ctx.moveTo(lastPoint.x, lastPoint.y);
+    ctx.lineTo(mousePos.x, mousePos.y);
+    ctx.stroke();
+    ctx.setLineDash([]); // Reset dash
+    
+    // Draw preview point at mouse position
+    ctx.fillStyle = 'rgba(0, 212, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(mousePos.x, mousePos.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // If shift is pressed, show a visual indicator
+    if (shiftPressed) {
+      ctx.strokeStyle = '#ffaa00';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(mousePos.x, mousePos.y, 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+}
+
+function calculatePathLength() {
+  if (!pageScales[currentPage]) {
+    return null;
+  }
+
+  let totalPixels = 0;
+  for (let i = 1; i < linearPoints.length; i++) {
+    const dx = linearPoints[i].x - linearPoints[i - 1].x;
+    const dy = linearPoints[i].y - linearPoints[i - 1].y;
+    totalPixels += Math.sqrt(dx * dx + dy * dy);
+  }
+
+  const scale = pageScales[currentPage];
+  return totalPixels / scale.pixelsPerFoot;
 }
 
 function finishLinear() {
@@ -1242,34 +1480,154 @@ function finishLinear() {
     return;
   }
 
-  // Calculate total length in pixels
-  let totalPixels = 0;
-  for (let i = 1; i < linearPoints.length; i++) {
-    const dx = linearPoints[i].x - linearPoints[i - 1].x;
-    const dy = linearPoints[i].y - linearPoints[i - 1].y;
-    totalPixels += Math.sqrt(dx * dx + dy * dy);
+  const lengthFt = calculatePathLength();
+  if (!lengthFt) return;
+
+  if (linearModeType === 'straight') {
+    // Save straight linear takeoff
+    if (!linears[currentPage]) linears[currentPage] = [];
+    linears[currentPage].push({
+      points: [...linearPoints],
+      itemId: linearItemId,
+      lengthFt: lengthFt,
+      type: 'straight'
+    });
+
+    alert(`✅ Linear takeoff saved!\n\n${CATALOG_NAMES[linearItemId]}\nLength: ${Math.round(lengthFt)} ft`);
+
+    // Reset for next trace
+    linearPoints = [];
+    clearOverlay();
+    updateTakeoffSummary();
+
+  } else if (linearModeType === 'average') {
+    // Add this run to average runs
+    averageRuns.push({ lengthFt });
+    updateAvgRunsDisplay();
+    
+    // Reset points for next run
+    linearPoints = [];
+    clearOverlay();
+  }
+}
+
+// ─── AVERAGE MODE FUNCTIONS ────────────────────────────────
+
+function updateAvgRunsDisplay() {
+  const listEl = document.getElementById('avg-runs-list');
+  const summaryEl = document.getElementById('avg-summary');
+
+  if (averageRuns.length === 0) {
+    listEl.innerHTML = '<div style="color:#888; font-size:0.75rem; font-style:italic;">No runs traced yet</div>';
+    summaryEl.innerHTML = 'Trace your first sample run...';
+    return;
   }
 
-  // Convert to feet using scale
-  const scale = pageScales[currentPage];
-  const lengthFt = totalPixels / scale.pixelsPerFoot;
-
-  // Save linear takeoff
-  if (!linears[currentPage]) linears[currentPage] = [];
-  linears[currentPage].push({
-    points: [...linearPoints],
-    itemId: linearItemId,
-    lengthFt: lengthFt
+  let html = '';
+  averageRuns.forEach((run, idx) => {
+    html += `<div class="avg-run-item">Run ${idx + 1}: ${Math.round(run.lengthFt)} ft</div>`;
   });
+  listEl.innerHTML = html;
 
-  alert(`✅ Linear takeoff saved!\n\n${CATALOG_NAMES[linearItemId]}\nLength: ${Math.round(lengthFt)} ft`);
+  const avgLength = averageRuns.reduce((sum, r) => sum + r.lengthFt, 0) / averageRuns.length;
+  summaryEl.innerHTML = `${averageRuns.length} runs · Avg: <strong>${Math.round(avgLength)} ft</strong>`;
+}
 
-  // Reset for next trace
+function addAnotherRun() {
+  if (linearPoints.length >= 2) {
+    finishLinear(); // Save current run
+  }
+  // LinearMode stays true, just reset points
   linearPoints = [];
   clearOverlay();
-  updateTakeoffSummary();
+  document.getElementById('average-instructions').style.display = 'block';
+}
 
-  // Stay in linear mode so user can trace more
+function finishAverage() {
+  if (averageRuns.length === 0) {
+    alert('Please trace at least one sample run first.');
+    return;
+  }
+
+  // If there's a current path being drawn, save it first
+  if (linearPoints.length >= 2) {
+    const lengthFt = calculatePathLength();
+    if (lengthFt) {
+      averageRuns.push({ lengthFt });
+    }
+  }
+
+  // Show config modal
+  document.getElementById('avg-config-modal').classList.add('show');
+  document.getElementById('average-instructions').style.display = 'none';
+  
+  // Auto-update preview when values change
+  document.getElementById('avg-drop-count').addEventListener('input', updateAvgPreview);
+  document.getElementById('avg-drop-length').addEventListener('input', updateAvgPreview);
+  
+  updateAvgPreview();
+}
+
+function updateAvgPreview() {
+  const dropCount = parseInt(document.getElementById('avg-drop-count').value) || 0;
+  const dropLength = parseFloat(document.getElementById('avg-drop-length').value) || 0;
+  
+  if (dropCount === 0) {
+    document.getElementById('avg-calc-preview').innerHTML = 'Enter drop count to see calculation...';
+    return;
+  }
+
+  const avgLength = averageRuns.reduce((sum, r) => sum + r.lengthFt, 0) / averageRuns.length;
+  const horizontalTotal = avgLength * dropCount;
+  const verticalTotal = dropLength * dropCount;
+  const grandTotal = horizontalTotal + verticalTotal;
+
+  document.getElementById('avg-calc-preview').innerHTML = `
+    <strong>Calculation:</strong><br>
+    Horizontal: ${Math.round(avgLength)} ft × ${dropCount} drops = ${Math.round(horizontalTotal)} ft<br>
+    Vertical: ${dropLength} ft × ${dropCount} drops = ${Math.round(verticalTotal)} ft<br>
+    <strong>TOTAL: ${Math.round(grandTotal)} ft</strong>
+  `;
+}
+
+function cancelAverageConfig() {
+  document.getElementById('avg-config-modal').classList.remove('show');
+  // Go back to tracing mode
+  document.getElementById('average-instructions').style.display = 'block';
+}
+
+function confirmAverageConfig() {
+  const dropCount = parseInt(document.getElementById('avg-drop-count').value);
+  const dropLength = parseFloat(document.getElementById('avg-drop-length').value) || 0;
+
+  if (!dropCount || dropCount < 1) {
+    alert('Please enter the total number of drops.');
+    return;
+  }
+
+  const avgLength = averageRuns.reduce((sum, r) => sum + r.lengthFt, 0) / averageRuns.length;
+  const horizontalTotal = avgLength * dropCount;
+  const verticalTotal = dropLength * dropCount;
+  const grandTotal = horizontalTotal + verticalTotal;
+
+  // Save average takeoff
+  if (!linears[currentPage]) linears[currentPage] = [];
+  linears[currentPage].push({
+    itemId: linearItemId,
+    lengthFt: grandTotal,
+    type: 'average',
+    avgLength: avgLength,
+    dropCount: dropCount,
+    dropLength: dropLength,
+    runsTraced: averageRuns.length
+  });
+
+  alert(`✅ Average takeoff saved!\n\n${CATALOG_NAMES[linearItemId]}\n${averageRuns.length} sample runs averaged\n${dropCount} drops × ${Math.round(avgLength)} ft + ${dropLength} ft drop\nTOTAL: ${Math.round(grandTotal)} ft`);
+
+  // Clean up
+  document.getElementById('avg-config-modal').classList.remove('show');
+  endLinear();
+  updateTakeoffSummary();
 }
 
 // ─── SIDEBAR TOGGLE ────────────────────────────────────────
