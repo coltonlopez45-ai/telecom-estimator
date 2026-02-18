@@ -1440,16 +1440,18 @@ function closeTakeoffTypeSelector() {
 function startTakeoffWithPart(takeoffType) {
   if (!selectedPart) return;
   
+  // Save the part before closing modal (which clears selectedPart)
+  const part = selectedPart;
   closeTakeoffTypeSelector();
   
   if (takeoffType === 'quantity') {
-    startQuantityTakeoffWithPart(selectedPart);
+    startQuantityTakeoffWithPart(part);
   } else if (takeoffType === 'linear') {
-    startLinearTakeoffWithPart(selectedPart, 'straight');
+    startLinearTakeoffWithPart(part, 'straight');
   } else if (takeoffType === 'average') {
-    startLinearTakeoffWithPart(selectedPart, 'average');
+    startLinearTakeoffWithPart(part, 'average');
   } else if (takeoffType === 'distance') {
-    startDistanceTakeoffWithPart(selectedPart);
+    startDistanceTakeoffWithPart(part);
   }
 }
 
