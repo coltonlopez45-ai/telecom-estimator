@@ -4,956 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TelecomEst Pro</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js">
-// CATALOG BROWSER FUNCTIONS
-
-function openCatalogBrowser() {
-  if (!pdfDoc) {
-    alert('Please upload a PDF first.');
-    return;
-  }
-  
-  if (catalog.parts.length === 0) {
-    alert('Your catalog is empty. Go to Manage Catalog to import parts.');
-    return;
-  }
-  
-  renderCatalogList();
-  document.getElementById('catalog-browser').classList.add('show');
-}
-
-function closeCatalogBrowser() {
-  document.getElementById('catalog-browser').classList.remove('show');
-  document.getElementById('catalog-search').value = '';
-  document.getElementById('catalog-filter').value = '';
-}
-
-function filterCatalog() {
-  renderCatalogList();
-}
-
-function renderCatalogList() {
-  const searchTerm = document.getElementById('catalog-search').value.toLowerCase();
-  const filterType = document.getElementById('catalog-filter').value;
-  
-  const filtered = catalog.parts.filter(part => {
-    const matchesSearch = !searchTerm || 
-      part.name.toLowerCase().includes(searchTerm) || 
-      part.description.toLowerCase().includes(searchTerm) ||
-      part.catalogNumber.toLowerCase().includes(searchTerm);
-    
-    const matchesFilter = !filterType || part.materialType === filterType;
-    
-    return matchesSearch && matchesFilter;
-  });
-  
-  const listEl = document.getElementById('catalog-list');
-  
-  if (filtered.length === 0) {
-    listEl.innerHTML = `
-      <div class="empty-catalog">
-        <h3>No parts found</h3>
-        <p>Try adjusting your search or filter</p>
-      </div>
-    `;
-    return;
-  }
-  
-  let html = '';
-  filtered.forEach(part => {
-    const typeLabels = part.takeoffTypes.map(t => {
-      if (t === 'quantity') return '<span class="catalog-item-type type-quantity">Count</span>';
-      if (t === 'linear') return '<span class="catalog-item-type type-linear">Linear</span>';
-      if (t === 'average') return '<span class="catalog-item-type type-linear">Avg</span>';
-      if (t === 'distance') return '<span class="catalog-item-type type-distance">Distance</span>';
-      return '';
-    }).join(' ');
-    
-    html += `
-      <div class="catalog-item" onclick="selectPart(${part.id})">
-        <div class="catalog-item-header">
-          <div class="catalog-item-name">${part.name}</div>
-          <div>${typeLabels}</div>
-        </div>
-        <div class="catalog-item-desc">${part.description}</div>
-        <div class="catalog-item-details">
-          <span>💰 $${part.unitCost.toFixed(2)}/${part.uom}</span>
-          <span>⏱ ${part.unitLabor} min</span>
-          <span>🏢 ${part.manufacturer}</span>
-          <span>📦 ${part.catalogNumber}</span>
-        </div>
-      </div>
-    `;
-  });
-  
-  listEl.innerHTML = html;
-}
-
-function selectPart(partId) {
-  selectedPart = catalog.parts.find(p => p.id === partId);
-  if (!selectedPart) return;
-  
-  closeCatalogBrowser();
-  
-  document.getElementById('selected-part-display').textContent = selectedPart.name;
-  
-  // Enable/disable takeoff types
-  document.getElementById('type-quantity').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('quantity'));
-  document.getElementById('type-linear').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('linear'));
-  document.getElementById('type-average').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('average'));
-  document.getElementById('type-distance').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('distance'));
-  
-  document.getElementById('takeoff-type-selector').classList.add('show');
-}
-
-function closeTakeoffTypeSelector() {
-  document.getElementById('takeoff-type-selector').classList.remove('show');
-  selectedPart = null;
-}
-
-function startTakeoffWithPart(takeoffType) {
-  if (!selectedPart) return;
-  
-  closeTakeoffTypeSelector();
-  
-  if (takeoffType === 'quantity') {
-    startQuantityTakeoffWithPart(selectedPart);
-  } else if (takeoffType === 'linear') {
-    startLinearTakeoffWithPart(selectedPart, 'straight');
-  } else if (takeoffType === 'average') {
-    startLinearTakeoffWithPart(selectedPart, 'average');
-  } else if (takeoffType === 'distance') {
-    startDistanceTakeoffWithPart(selectedPart);
-  }
-}
-
-
-
-// EXCEL IMPORT/EXPORT FUNCTIONS
-
-function openCatalogManager() {
-  document.getElementById('catalog-manager').classList.add('show');
-}
-
-function closeCatalogManager() {
-  document.getElementById('catalog-manager').classList.remove('show');
-}
-
-function handleExcelImport(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-      
-      if (jsonData.length === 0) {
-        alert('Excel file is empty');
-        return;
-      }
-      
-      importPartsFromJSON(jsonData);
-      
-    } catch (error) {
-      alert('Error reading Excel file: ' + error.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function importPartsFromJSON(jsonData) {
-  let imported = 0;
-  let errors = [];
-  
-  jsonData.forEach((row, idx) => {
-    try {
-      const part = {
-        id: catalog.nextId++,
-        name: row['Name'] || row['name'] || row['Part Name'] || '',
-        description: row['Description'] || row['description'] || row['Desc'] || '',
-        uom: row['UOM'] || row['Unit of Measure'] || row['Unit'] || 'EA',
-        unitCost: parseFloat(row['Unit Cost'] || row['Cost'] || row['Price'] || 0),
-        unitLabor: parseFloat(row['Unit Labor'] || row['Labor'] || row['Labor (mins)'] || 0),
-        manufacturer: row['Manufacturer'] || row['Mfg'] || '',
-        supplier: row['Supplier'] || row['Vendor'] || '',
-        catalogNumber: row['Catalog Number'] || row['Cat #'] || row['Part Number'] || '',
-        costCode: row['Cost Code'] || '',
-        costCodeName: row['Cost Code Name'] || '',
-        materialType: row['Material Type'] || row['Type'] || row['Category'] || '',
-        customField1: row['Custom Field 1'] || row['Custom1'] || '',
-        customField2: row['Custom Field 2'] || row['Custom2'] || '',
-        customField3: row['Custom Field 3'] || row['Custom3'] || '',
-        customField4: row['Custom Field 4'] || row['Custom4'] || '',
-        customField5: row['Custom Field 5'] || row['Custom5'] || '',
-        takeoffTypes: determineTakeoffTypes(row)
-      };
-      
-      if (!part.name) {
-        errors.push(`Row ${idx + 2}: Missing part name`);
-        return;
-      }
-      
-      catalog.parts.push(part);
-      imported++;
-      
-    } catch (error) {
-      errors.push(`Row ${idx + 2}: ${error.message}`);
-    }
-  });
-  
-  saveCatalogToStorage();
-  
-  let message = `✅ Successfully imported ${imported} parts`;
-  if (errors.length > 0) {
-    message += `
-
-⚠️ ${errors.length} errors:
-` + errors.slice(0, 5).join('
-');
-    if (errors.length > 5) message += `
-... and ${errors.length - 5} more`;
-  }
-  
-  alert(message);
-  closeCatalogManager();
-  document.getElementById('excel-file-input').value = '';
-}
-
-function determineTakeoffTypes(row) {
-  const uom = (row['UOM'] || row['Unit of Measure'] || 'EA').toUpperCase();
-  const type = (row['Material Type'] || row['Type'] || '').toLowerCase();
-  const name = (row['Name'] || row['Part Name'] || '').toLowerCase();
-  
-  if (uom === 'FT' || uom === 'LF' || uom === 'M') {
-    if (name.includes('cable') || name.includes('conduit') || name.includes('tray')) {
-      return ['linear', 'average'];
-    }
-  }
-  
-  if (name.includes('hook') || name.includes('hanger') || name.includes('support') || 
-      name.includes('strap') || name.includes('clamp')) {
-    return ['distance'];
-  }
-  
-  return ['quantity'];
-}
-
-function exportCatalogToExcel() {
-  if (catalog.parts.length === 0) {
-    alert('Catalog is empty. Nothing to export.');
-    return;
-  }
-  
-  const exportData = catalog.parts.map(part => ({
-    'Name': part.name,
-    'Description': part.description,
-    'UOM': part.uom,
-    'Unit Cost': part.unitCost,
-    'Unit Labor (mins)': part.unitLabor,
-    'Manufacturer': part.manufacturer,
-    'Supplier': part.supplier,
-    'Catalog Number': part.catalogNumber,
-    'Cost Code': part.costCode,
-    'Cost Code Name': part.costCodeName,
-    'Material Type': part.materialType,
-    'Custom Field 1': part.customField1,
-    'Custom Field 2': part.customField2,
-    'Custom Field 3': part.customField3,
-    'Custom Field 4': part.customField4,
-    'Custom Field 5': part.customField5,
-    'Takeoff Types': part.takeoffTypes.join(', ')
-  }));
-  
-  const ws = XLSX.utils.json_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Parts Catalog');
-  
-  const timestamp = new Date().toISOString().split('T')[0];
-  const filename = `TelecomEst_Catalog_${timestamp}.xlsx`;
-  
-  XLSX.writeFile(wb, filename);
-  
-  alert(`✅ Exported ${catalog.parts.length} parts to ${filename}`);
-}
-
-function downloadSampleExcel() {
-  const sampleData = [
-    {
-      'Name': 'Cat6A Jack',
-      'Description': 'Category 6A RJ45 Keystone Jack',
-      'UOM': 'EA',
-      'Unit Cost': 8.50,
-      'Unit Labor (mins)': 15,
-      'Manufacturer': 'Panduit',
-      'Supplier': 'Graybar',
-      'Catalog Number': 'CJ688TGBL',
-      'Cost Code': '27-1000',
-      'Cost Code Name': 'Communications - Horizontal Cabling',
-      'Material Type': 'Copper',
-      'Custom Field 1': '',
-      'Custom Field 2': '',
-      'Custom Field 3': '',
-      'Custom Field 4': '',
-      'Custom Field 5': ''
-    },
-    {
-      'Name': 'Cat6A Cable',
-      'Description': 'Category 6A UTP Cable 23AWG',
-      'UOM': 'FT',
-      'Unit Cost': 0.35,
-      'Unit Labor (mins)': 0.05,
-      'Manufacturer': 'CommScope',
-      'Supplier': 'Graybar',
-      'Catalog Number': '1427071-6',
-      'Cost Code': '27-1000',
-      'Cost Code Name': 'Communications - Horizontal Cabling',
-      'Material Type': 'Cable',
-      'Custom Field 1': '',
-      'Custom Field 2': '',
-      'Custom Field 3': '',
-      'Custom Field 4': '',
-      'Custom Field 5': ''
-    }
-  ];
-  
-  const ws = XLSX.utils.json_to_sheet(sampleData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sample Catalog');
-  
-  XLSX.writeFile(wb, 'TelecomEst_Catalog_Template.xlsx');
-}
-
-
-
-// UPDATED TAKEOFF FUNCTIONS FOR CATALOG PARTS
-
-function startQuantityTakeoffWithPart(part) {
-  if (calMode) cancelCalibration();
-  if (linearMode) endLinear();
-  if (distanceMode) endDistance();
-  
-  takeoffMode = true;
-  selectedTakeoffPart = part;
-  document.getElementById('takeoff-instructions').style.display = 'block';
-}
-
-function startLinearTakeoffWithPart(part, mode) {
-  if (calMode) cancelCalibration();
-  if (takeoffMode) endTakeoff();
-  if (distanceMode) endDistance();
-  
-  linearMode = true;
-  linearModeType = mode;
-  linearItemId = 'part-' + part.id;
-  linearPoints = [];
-  selectedLinearPart = part;
-  
-  if (mode === 'average') {
-    averageRuns = [];
-    document.getElementById('avg-runs-panel').style.display = 'block';
-    updateAvgRunsDisplay();
-    document.getElementById('average-instructions').style.display = 'block';
-  } else {
-    document.getElementById('linear-instructions').style.display = 'block';
-  }
-}
-
-function startDistanceTakeoffWithPart(part) {
-  if (calMode) cancelCalibration();
-  if (takeoffMode) endTakeoff();
-  if (linearMode) endLinear();
-  
-  const spacing = prompt(`How many feet between each ${part.name}?`, '5');
-  if (!spacing || isNaN(spacing) || parseFloat(spacing) <= 0) {
-    alert('Invalid spacing. Please enter a number greater than 0.');
-    return;
-  }
-  
-  distanceMode = true;
-  distanceItemId = 'part-' + part.id;
-  distanceSpacing = parseFloat(spacing);
-  distancePoints = [];
-  selectedDistancePart = part;
-  
-  document.getElementById('distance-instructions').style.display = 'block';
-}
-
-// DISTANCE TAKEOFF MODE FUNCTIONS
-
-function drawDistancePath() {
-  const ctx = document.getElementById('overlay-canvas').getContext('2d');
-  clearOverlay();
-
-  if (distancePoints.length === 0) return;
-
-  distancePoints.forEach((p, idx) => {
-    ctx.fillStyle = '#ffaa00';
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 9px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(idx + 1, p.x, p.y);
-  });
-
-  if (distancePoints.length > 1) {
-    ctx.strokeStyle = '#ffaa00';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(distancePoints[0].x, distancePoints[0].y);
-    for (let i = 1; i < distancePoints.length; i++) {
-      ctx.lineTo(distancePoints[i].x, distancePoints[i].y);
-    }
-    ctx.stroke();
-  }
-
-  if (distancePoints.length > 0 && mousePos.x && mousePos.y) {
-    const lastPoint = distancePoints[distancePoints.length - 1];
-    ctx.strokeStyle = 'rgba(255, 170, 0, 0.4)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(lastPoint.x, lastPoint.y);
-    ctx.lineTo(mousePos.x, mousePos.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function calculateDistancePathLength() {
-  if (!pageScales[currentPage]) return null;
-
-  let totalPixels = 0;
-  for (let i = 1; i < distancePoints.length; i++) {
-    const dx = distancePoints[i].x - distancePoints[i - 1].x;
-    const dy = distancePoints[i].y - distancePoints[i - 1].y;
-    totalPixels += Math.sqrt(dx * dx + dy * dy);
-  }
-
-  const scale = pageScales[currentPage];
-  return totalPixels / scale.pixelsPerFoot;
-}
-
-function finishDistance() {
-  if (!pageScales[currentPage]) {
-    alert('⚠️ Page not calibrated! Please calibrate the scale first.');
-    endDistance();
-    return;
-  }
-
-  const lengthFt = calculateDistancePathLength();
-  if (!lengthFt) return;
-
-  const count = Math.ceil(lengthFt / distanceSpacing);
-
-  if (!distances[currentPage]) distances[currentPage] = [];
-  distances[currentPage].push({
-    points: [...distancePoints],
-    itemId: distanceItemId,
-    count: count,
-    spacing: distanceSpacing,
-    lengthFt: lengthFt
-  });
-
-  alert(`✅ Distance takeoff saved!\n\n${selectedDistancePart.name}\nPath: ${Math.round(lengthFt)} ft\nSpacing: ${distanceSpacing} ft\nCount: ${count} items`);
-
-  distancePoints = [];
-  clearOverlay();
-  updateTakeoffSummary();
-}
-
-function endDistance() {
-  distanceMode = false;
-  distanceItemId = null;
-  distancePoints = [];
-  selectedDistancePart = null;
-  document.getElementById('distance-instructions').style.display = 'none';
-  clearOverlay();
-}
-
-
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js">
-// CATALOG BROWSER FUNCTIONS
-
-function openCatalogBrowser() {
-  if (!pdfDoc) {
-    alert('Please upload a PDF first.');
-    return;
-  }
-  
-  if (catalog.parts.length === 0) {
-    alert('Your catalog is empty. Go to Manage Catalog to import parts.');
-    return;
-  }
-  
-  renderCatalogList();
-  document.getElementById('catalog-browser').classList.add('show');
-}
-
-function closeCatalogBrowser() {
-  document.getElementById('catalog-browser').classList.remove('show');
-  document.getElementById('catalog-search').value = '';
-  document.getElementById('catalog-filter').value = '';
-}
-
-function filterCatalog() {
-  renderCatalogList();
-}
-
-function renderCatalogList() {
-  const searchTerm = document.getElementById('catalog-search').value.toLowerCase();
-  const filterType = document.getElementById('catalog-filter').value;
-  
-  const filtered = catalog.parts.filter(part => {
-    const matchesSearch = !searchTerm || 
-      part.name.toLowerCase().includes(searchTerm) || 
-      part.description.toLowerCase().includes(searchTerm) ||
-      part.catalogNumber.toLowerCase().includes(searchTerm);
-    
-    const matchesFilter = !filterType || part.materialType === filterType;
-    
-    return matchesSearch && matchesFilter;
-  });
-  
-  const listEl = document.getElementById('catalog-list');
-  
-  if (filtered.length === 0) {
-    listEl.innerHTML = `
-      <div class="empty-catalog">
-        <h3>No parts found</h3>
-        <p>Try adjusting your search or filter</p>
-      </div>
-    `;
-    return;
-  }
-  
-  let html = '';
-  filtered.forEach(part => {
-    const typeLabels = part.takeoffTypes.map(t => {
-      if (t === 'quantity') return '<span class="catalog-item-type type-quantity">Count</span>';
-      if (t === 'linear') return '<span class="catalog-item-type type-linear">Linear</span>';
-      if (t === 'average') return '<span class="catalog-item-type type-linear">Avg</span>';
-      if (t === 'distance') return '<span class="catalog-item-type type-distance">Distance</span>';
-      return '';
-    }).join(' ');
-    
-    html += `
-      <div class="catalog-item" onclick="selectPart(${part.id})">
-        <div class="catalog-item-header">
-          <div class="catalog-item-name">${part.name}</div>
-          <div>${typeLabels}</div>
-        </div>
-        <div class="catalog-item-desc">${part.description}</div>
-        <div class="catalog-item-details">
-          <span>💰 $${part.unitCost.toFixed(2)}/${part.uom}</span>
-          <span>⏱ ${part.unitLabor} min</span>
-          <span>🏢 ${part.manufacturer}</span>
-          <span>📦 ${part.catalogNumber}</span>
-        </div>
-      </div>
-    `;
-  });
-  
-  listEl.innerHTML = html;
-}
-
-function selectPart(partId) {
-  selectedPart = catalog.parts.find(p => p.id === partId);
-  if (!selectedPart) return;
-  
-  closeCatalogBrowser();
-  
-  document.getElementById('selected-part-display').textContent = selectedPart.name;
-  
-  // Enable/disable takeoff types
-  document.getElementById('type-quantity').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('quantity'));
-  document.getElementById('type-linear').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('linear'));
-  document.getElementById('type-average').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('average'));
-  document.getElementById('type-distance').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('distance'));
-  
-  document.getElementById('takeoff-type-selector').classList.add('show');
-}
-
-function closeTakeoffTypeSelector() {
-  document.getElementById('takeoff-type-selector').classList.remove('show');
-  selectedPart = null;
-}
-
-function startTakeoffWithPart(takeoffType) {
-  if (!selectedPart) return;
-  
-  closeTakeoffTypeSelector();
-  
-  if (takeoffType === 'quantity') {
-    startQuantityTakeoffWithPart(selectedPart);
-  } else if (takeoffType === 'linear') {
-    startLinearTakeoffWithPart(selectedPart, 'straight');
-  } else if (takeoffType === 'average') {
-    startLinearTakeoffWithPart(selectedPart, 'average');
-  } else if (takeoffType === 'distance') {
-    startDistanceTakeoffWithPart(selectedPart);
-  }
-}
-
-
-
-// EXCEL IMPORT/EXPORT FUNCTIONS
-
-function openCatalogManager() {
-  document.getElementById('catalog-manager').classList.add('show');
-}
-
-function closeCatalogManager() {
-  document.getElementById('catalog-manager').classList.remove('show');
-}
-
-function handleExcelImport(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-      
-      if (jsonData.length === 0) {
-        alert('Excel file is empty');
-        return;
-      }
-      
-      importPartsFromJSON(jsonData);
-      
-    } catch (error) {
-      alert('Error reading Excel file: ' + error.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function importPartsFromJSON(jsonData) {
-  let imported = 0;
-  let errors = [];
-  
-  jsonData.forEach((row, idx) => {
-    try {
-      const part = {
-        id: catalog.nextId++,
-        name: row['Name'] || row['name'] || row['Part Name'] || '',
-        description: row['Description'] || row['description'] || row['Desc'] || '',
-        uom: row['UOM'] || row['Unit of Measure'] || row['Unit'] || 'EA',
-        unitCost: parseFloat(row['Unit Cost'] || row['Cost'] || row['Price'] || 0),
-        unitLabor: parseFloat(row['Unit Labor'] || row['Labor'] || row['Labor (mins)'] || 0),
-        manufacturer: row['Manufacturer'] || row['Mfg'] || '',
-        supplier: row['Supplier'] || row['Vendor'] || '',
-        catalogNumber: row['Catalog Number'] || row['Cat #'] || row['Part Number'] || '',
-        costCode: row['Cost Code'] || '',
-        costCodeName: row['Cost Code Name'] || '',
-        materialType: row['Material Type'] || row['Type'] || row['Category'] || '',
-        customField1: row['Custom Field 1'] || row['Custom1'] || '',
-        customField2: row['Custom Field 2'] || row['Custom2'] || '',
-        customField3: row['Custom Field 3'] || row['Custom3'] || '',
-        customField4: row['Custom Field 4'] || row['Custom4'] || '',
-        customField5: row['Custom Field 5'] || row['Custom5'] || '',
-        takeoffTypes: determineTakeoffTypes(row)
-      };
-      
-      if (!part.name) {
-        errors.push(`Row ${idx + 2}: Missing part name`);
-        return;
-      }
-      
-      catalog.parts.push(part);
-      imported++;
-      
-    } catch (error) {
-      errors.push(`Row ${idx + 2}: ${error.message}`);
-    }
-  });
-  
-  saveCatalogToStorage();
-  
-  let message = `✅ Successfully imported ${imported} parts`;
-  if (errors.length > 0) {
-    message += `
-
-⚠️ ${errors.length} errors:
-` + errors.slice(0, 5).join('
-');
-    if (errors.length > 5) message += `
-... and ${errors.length - 5} more`;
-  }
-  
-  alert(message);
-  closeCatalogManager();
-  document.getElementById('excel-file-input').value = '';
-}
-
-function determineTakeoffTypes(row) {
-  const uom = (row['UOM'] || row['Unit of Measure'] || 'EA').toUpperCase();
-  const type = (row['Material Type'] || row['Type'] || '').toLowerCase();
-  const name = (row['Name'] || row['Part Name'] || '').toLowerCase();
-  
-  if (uom === 'FT' || uom === 'LF' || uom === 'M') {
-    if (name.includes('cable') || name.includes('conduit') || name.includes('tray')) {
-      return ['linear', 'average'];
-    }
-  }
-  
-  if (name.includes('hook') || name.includes('hanger') || name.includes('support') || 
-      name.includes('strap') || name.includes('clamp')) {
-    return ['distance'];
-  }
-  
-  return ['quantity'];
-}
-
-function exportCatalogToExcel() {
-  if (catalog.parts.length === 0) {
-    alert('Catalog is empty. Nothing to export.');
-    return;
-  }
-  
-  const exportData = catalog.parts.map(part => ({
-    'Name': part.name,
-    'Description': part.description,
-    'UOM': part.uom,
-    'Unit Cost': part.unitCost,
-    'Unit Labor (mins)': part.unitLabor,
-    'Manufacturer': part.manufacturer,
-    'Supplier': part.supplier,
-    'Catalog Number': part.catalogNumber,
-    'Cost Code': part.costCode,
-    'Cost Code Name': part.costCodeName,
-    'Material Type': part.materialType,
-    'Custom Field 1': part.customField1,
-    'Custom Field 2': part.customField2,
-    'Custom Field 3': part.customField3,
-    'Custom Field 4': part.customField4,
-    'Custom Field 5': part.customField5,
-    'Takeoff Types': part.takeoffTypes.join(', ')
-  }));
-  
-  const ws = XLSX.utils.json_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Parts Catalog');
-  
-  const timestamp = new Date().toISOString().split('T')[0];
-  const filename = `TelecomEst_Catalog_${timestamp}.xlsx`;
-  
-  XLSX.writeFile(wb, filename);
-  
-  alert(`✅ Exported ${catalog.parts.length} parts to ${filename}`);
-}
-
-function downloadSampleExcel() {
-  const sampleData = [
-    {
-      'Name': 'Cat6A Jack',
-      'Description': 'Category 6A RJ45 Keystone Jack',
-      'UOM': 'EA',
-      'Unit Cost': 8.50,
-      'Unit Labor (mins)': 15,
-      'Manufacturer': 'Panduit',
-      'Supplier': 'Graybar',
-      'Catalog Number': 'CJ688TGBL',
-      'Cost Code': '27-1000',
-      'Cost Code Name': 'Communications - Horizontal Cabling',
-      'Material Type': 'Copper',
-      'Custom Field 1': '',
-      'Custom Field 2': '',
-      'Custom Field 3': '',
-      'Custom Field 4': '',
-      'Custom Field 5': ''
-    },
-    {
-      'Name': 'Cat6A Cable',
-      'Description': 'Category 6A UTP Cable 23AWG',
-      'UOM': 'FT',
-      'Unit Cost': 0.35,
-      'Unit Labor (mins)': 0.05,
-      'Manufacturer': 'CommScope',
-      'Supplier': 'Graybar',
-      'Catalog Number': '1427071-6',
-      'Cost Code': '27-1000',
-      'Cost Code Name': 'Communications - Horizontal Cabling',
-      'Material Type': 'Cable',
-      'Custom Field 1': '',
-      'Custom Field 2': '',
-      'Custom Field 3': '',
-      'Custom Field 4': '',
-      'Custom Field 5': ''
-    }
-  ];
-  
-  const ws = XLSX.utils.json_to_sheet(sampleData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sample Catalog');
-  
-  XLSX.writeFile(wb, 'TelecomEst_Catalog_Template.xlsx');
-}
-
-
-
-// UPDATED TAKEOFF FUNCTIONS FOR CATALOG PARTS
-
-function startQuantityTakeoffWithPart(part) {
-  if (calMode) cancelCalibration();
-  if (linearMode) endLinear();
-  if (distanceMode) endDistance();
-  
-  takeoffMode = true;
-  selectedTakeoffPart = part;
-  document.getElementById('takeoff-instructions').style.display = 'block';
-}
-
-function startLinearTakeoffWithPart(part, mode) {
-  if (calMode) cancelCalibration();
-  if (takeoffMode) endTakeoff();
-  if (distanceMode) endDistance();
-  
-  linearMode = true;
-  linearModeType = mode;
-  linearItemId = 'part-' + part.id;
-  linearPoints = [];
-  selectedLinearPart = part;
-  
-  if (mode === 'average') {
-    averageRuns = [];
-    document.getElementById('avg-runs-panel').style.display = 'block';
-    updateAvgRunsDisplay();
-    document.getElementById('average-instructions').style.display = 'block';
-  } else {
-    document.getElementById('linear-instructions').style.display = 'block';
-  }
-}
-
-function startDistanceTakeoffWithPart(part) {
-  if (calMode) cancelCalibration();
-  if (takeoffMode) endTakeoff();
-  if (linearMode) endLinear();
-  
-  const spacing = prompt(`How many feet between each ${part.name}?`, '5');
-  if (!spacing || isNaN(spacing) || parseFloat(spacing) <= 0) {
-    alert('Invalid spacing. Please enter a number greater than 0.');
-    return;
-  }
-  
-  distanceMode = true;
-  distanceItemId = 'part-' + part.id;
-  distanceSpacing = parseFloat(spacing);
-  distancePoints = [];
-  selectedDistancePart = part;
-  
-  document.getElementById('distance-instructions').style.display = 'block';
-}
-
-// DISTANCE TAKEOFF MODE FUNCTIONS
-
-function drawDistancePath() {
-  const ctx = document.getElementById('overlay-canvas').getContext('2d');
-  clearOverlay();
-
-  if (distancePoints.length === 0) return;
-
-  distancePoints.forEach((p, idx) => {
-    ctx.fillStyle = '#ffaa00';
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 9px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(idx + 1, p.x, p.y);
-  });
-
-  if (distancePoints.length > 1) {
-    ctx.strokeStyle = '#ffaa00';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(distancePoints[0].x, distancePoints[0].y);
-    for (let i = 1; i < distancePoints.length; i++) {
-      ctx.lineTo(distancePoints[i].x, distancePoints[i].y);
-    }
-    ctx.stroke();
-  }
-
-  if (distancePoints.length > 0 && mousePos.x && mousePos.y) {
-    const lastPoint = distancePoints[distancePoints.length - 1];
-    ctx.strokeStyle = 'rgba(255, 170, 0, 0.4)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(lastPoint.x, lastPoint.y);
-    ctx.lineTo(mousePos.x, mousePos.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function calculateDistancePathLength() {
-  if (!pageScales[currentPage]) return null;
-
-  let totalPixels = 0;
-  for (let i = 1; i < distancePoints.length; i++) {
-    const dx = distancePoints[i].x - distancePoints[i - 1].x;
-    const dy = distancePoints[i].y - distancePoints[i - 1].y;
-    totalPixels += Math.sqrt(dx * dx + dy * dy);
-  }
-
-  const scale = pageScales[currentPage];
-  return totalPixels / scale.pixelsPerFoot;
-}
-
-function finishDistance() {
-  if (!pageScales[currentPage]) {
-    alert('⚠️ Page not calibrated! Please calibrate the scale first.');
-    endDistance();
-    return;
-  }
-
-  const lengthFt = calculateDistancePathLength();
-  if (!lengthFt) return;
-
-  const count = Math.ceil(lengthFt / distanceSpacing);
-
-  if (!distances[currentPage]) distances[currentPage] = [];
-  distances[currentPage].push({
-    points: [...distancePoints],
-    itemId: distanceItemId,
-    count: count,
-    spacing: distanceSpacing,
-    lengthFt: lengthFt
-  });
-
-  alert(`✅ Distance takeoff saved!\n\n${selectedDistancePart.name}\nPath: ${Math.round(lengthFt)} ft\nSpacing: ${distanceSpacing} ft\nCount: ${count} items`);
-
-  distancePoints = [];
-  clearOverlay();
-  updateTakeoffSummary();
-}
-
-function endDistance() {
-  distanceMode = false;
-  distanceItemId = null;
-  distancePoints = [];
-  selectedDistancePart = null;
-  document.getElementById('distance-instructions').style.display = 'none';
-  clearOverlay();
-}
-
-
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -1877,10 +929,13 @@ function endDistance() {
 
         <div class="toolbar-group">
           <label>Takeoff</label>
-          <button id="takeoff-btn" onclick="startTakeoff()">📍 Count Items</button>
-          <button id="linear-btn" onclick="startLinear('straight')">📏 Linear</button>
-          <button id="avg-btn" onclick="startLinear('average')">📐 Avg + Drops</button>
-          <button id="distance-btn" onclick="startDistance()">📌 Count by Distance</button>
+          <button onclick="openCatalogBrowser()" class="green">📋 Select from Catalog</button>
+        </div>
+
+        <div class="toolbar-group">
+          <label>Catalog</label>
+          <button onclick="openCatalogManager()">📊 Manage</button>
+          <button onclick="exportCatalogToExcel()">⬇ Export</button>
         </div>
 
         <div class="toolbar-group">
@@ -1901,10 +956,6 @@ function endDistance() {
 
       <div id="linear-instructions" class="instruction-bar">
         📏 LINEAR MODE: Click points to trace. Hold SHIFT for horizontal/vertical/45° snap. Double-click or Enter to finish.
-      </div>
-
-      <div id="distance-instructions" class="instruction-bar">
-        📌 DISTANCE MODE: Trace path (hold SHIFT to snap). Double-click to finish. Items placed at set intervals.
       </div>
 
       <div id="average-instructions" class="instruction-bar">
@@ -1953,6 +1004,43 @@ function endDistance() {
     <div class="modal-btns">
       <button class="green" onclick="confirmCalibration()">✓ Set Scale</button>
       <button onclick="cancelCalibration()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- TAKEOFF ITEM SELECTION MODAL -->
+<div id="takeoff-modal">
+  <div id="takeoff-modal-box">
+    <h3>📍 What are you counting?</h3>
+    <p>Select the catalog item for this takeoff point</p>
+    <label>Item Type</label>
+    <select id="takeoff-item-select">
+      <optgroup label="Copper - Horizontal">
+        <option value="cat6a-jack">Cat6A Jack / Outlet</option>
+        <option value="cat6-jack">Cat6 Jack / Outlet</option>
+        <option value="cat5e-jack">Cat5e Jack / Outlet</option>
+      </optgroup>
+      <optgroup label="Fiber - Connectors">
+        <option value="fiber-sc">Fiber SC Connector</option>
+        <option value="fiber-lc">Fiber LC Duplex Connector</option>
+        <option value="fiber-mpo">Fiber MPO/MTP Connector</option>
+      </optgroup>
+      <optgroup label="Equipment & Hardware">
+        <option value="faceplate-2port">2-Port Faceplate</option>
+        <option value="faceplate-4port">4-Port Faceplate</option>
+        <option value="patch-panel-24">24-Port Patch Panel</option>
+        <option value="patch-panel-48">48-Port Patch Panel</option>
+        <option value="rack-1u">1U Rack Mount Device</option>
+      </optgroup>
+      <optgroup label="Devices">
+        <option value="ap-wireless">Wireless Access Point</option>
+        <option value="camera-ip">IP Camera</option>
+        <option value="phone-voip">VoIP Phone Outlet</option>
+      </optgroup>
+    </select>
+    <div class="modal-btns" style="margin-top:20px;">
+      <button class="green" onclick="confirmTakeoffItem()">✓ Add Point</button>
+      <button onclick="cancelTakeoffItem()">Cancel</button>
     </div>
   </div>
 </div>
@@ -2106,6 +1194,10 @@ function endDistance() {
   </div>
 </div>
 
+<!-- DISTANCE MODE INSTRUCTION BAR -->
+<div id="distance-instructions" class="instruction-bar">
+  📌 DISTANCE MODE: Trace path (hold SHIFT to snap). Double-click to finish. Items placed at set intervals.
+</div>
 
 <script>
 // PDF.js setup
@@ -2114,7 +1206,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 // VERSION - Update this after each change
 const APP_VERSION = 'v1.3';
 
-// CATALOG SYSTEM
+// ═══════════════════════════════════════════════════════════════
+// CATALOG SYSTEM v1.3
+// ═══════════════════════════════════════════════════════════════
+
 let catalog = {
   parts: [],
   nextId: 1
@@ -2125,7 +1220,14 @@ let selectedTakeoffPart = null;
 let selectedLinearPart = null;
 let selectedDistancePart = null;
 
-// Load catalog from localStorage on startup
+// Distance takeoff state (not in v1.2)
+let distanceMode = false;
+let distancePoints = [];
+let distanceItemId = null;
+let distanceSpacing = 5;
+let distances = {};
+
+// Load catalog from localStorage
 function loadCatalogFromStorage() {
   const saved = localStorage.getItem('telecomest_catalog');
   if (saved) {
@@ -2143,7 +1245,6 @@ function loadCatalogFromStorage() {
 
 function saveCatalogToStorage() {
   localStorage.setItem('telecomest_catalog', JSON.stringify(catalog));
-  console.log(`Saved ${catalog.parts.length} parts to storage`);
 }
 
 function initializeSampleCatalog() {
@@ -2227,43 +1328,477 @@ function initializeSampleCatalog() {
       materialType: 'Fiber',
       customField1: '', customField2: '', customField3: '', customField4: '', customField5: '',
       takeoffTypes: ['linear', 'average']
-    },
-    {
-      id: catalog.nextId++,
-      name: '2-Port Faceplate',
-      description: '2-Gang Wall Plate',
-      uom: 'EA',
-      unitCost: 2.50,
-      unitLabor: 8,
-      manufacturer: 'Leviton',
-      supplier: 'Graybar',
-      catalogNumber: '42080-2WP',
-      costCode: '27-1000',
-      costCodeName: 'Communications - Horizontal Cabling',
-      materialType: 'Hardware',
-      customField1: '', customField2: '', customField3: '', customField4: '', customField5: '',
-      takeoffTypes: ['quantity']
-    },
-    {
-      id: catalog.nextId++,
-      name: '24-Port Patch Panel',
-      description: '1U 24-Port Cat6A Patch Panel',
-      uom: 'EA',
-      unitCost: 85.00,
-      unitLabor: 120,
-      manufacturer: 'Panduit',
-      supplier: 'Graybar',
-      catalogNumber: 'CPP24WBLY',
-      costCode: '27-1000',
-      costCodeName: 'Communications - Horizontal Cabling',
-      materialType: 'Hardware',
-      customField1: '', customField2: '', customField3: '', customField4: '', customField5: '',
-      takeoffTypes: ['quantity']
     }
   ];
   saveCatalogToStorage();
 }
 
+// CATALOG BROWSER FUNCTIONS
+function openCatalogBrowser() {
+  if (!pdfDoc) {
+    alert('Please upload a PDF first.');
+    return;
+  }
+  
+  if (catalog.parts.length === 0) {
+    alert('Your catalog is empty. Go to Manage Catalog to import parts.');
+    return;
+  }
+  
+  renderCatalogList();
+  document.getElementById('catalog-browser').classList.add('show');
+}
+
+function closeCatalogBrowser() {
+  document.getElementById('catalog-browser').classList.remove('show');
+  document.getElementById('catalog-search').value = '';
+  document.getElementById('catalog-filter').value = '';
+}
+
+function filterCatalog() {
+  renderCatalogList();
+}
+
+function renderCatalogList() {
+  const searchTerm = document.getElementById('catalog-search').value.toLowerCase();
+  const filterType = document.getElementById('catalog-filter').value;
+  
+  const filtered = catalog.parts.filter(part => {
+    const matchesSearch = !searchTerm || 
+      part.name.toLowerCase().includes(searchTerm) || 
+      part.description.toLowerCase().includes(searchTerm) ||
+      part.catalogNumber.toLowerCase().includes(searchTerm);
+    
+    const matchesFilter = !filterType || part.materialType === filterType;
+    
+    return matchesSearch && matchesFilter;
+  });
+  
+  const listEl = document.getElementById('catalog-list');
+  
+  if (filtered.length === 0) {
+    listEl.innerHTML = `
+      <div class="empty-catalog">
+        <h3>No parts found</h3>
+        <p>Try adjusting your search or filter</p>
+      </div>
+    `;
+    return;
+  }
+  
+  let html = '';
+  filtered.forEach(part => {
+    const typeLabels = part.takeoffTypes.map(t => {
+      if (t === 'quantity') return '<span class="catalog-item-type type-quantity">Count</span>';
+      if (t === 'linear') return '<span class="catalog-item-type type-linear">Linear</span>';
+      if (t === 'average') return '<span class="catalog-item-type type-linear">Avg</span>';
+      if (t === 'distance') return '<span class="catalog-item-type type-distance">Distance</span>';
+      return '';
+    }).join(' ');
+    
+    html += `
+      <div class="catalog-item" onclick="selectPart(${part.id})">
+        <div class="catalog-item-header">
+          <div class="catalog-item-name">${part.name}</div>
+          <div>${typeLabels}</div>
+        </div>
+        <div class="catalog-item-desc">${part.description}</div>
+        <div class="catalog-item-details">
+          <span>💰 $${part.unitCost.toFixed(2)}/${part.uom}</span>
+          <span>⏱ ${part.unitLabor} min</span>
+          <span>🏢 ${part.manufacturer}</span>
+          <span>📦 ${part.catalogNumber}</span>
+        </div>
+      </div>
+    `;
+  });
+  
+  listEl.innerHTML = html;
+}
+
+function selectPart(partId) {
+  selectedPart = catalog.parts.find(p => p.id === partId);
+  if (!selectedPart) return;
+  
+  closeCatalogBrowser();
+  
+  document.getElementById('selected-part-display').textContent = selectedPart.name;
+  
+  document.getElementById('type-quantity').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('quantity'));
+  document.getElementById('type-linear').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('linear'));
+  document.getElementById('type-average').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('average'));
+  document.getElementById('type-distance').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('distance'));
+  
+  document.getElementById('takeoff-type-selector').classList.add('show');
+}
+
+function closeTakeoffTypeSelector() {
+  document.getElementById('takeoff-type-selector').classList.remove('show');
+  selectedPart = null;
+}
+
+function startTakeoffWithPart(takeoffType) {
+  if (!selectedPart) return;
+  
+  closeTakeoffTypeSelector();
+  
+  if (takeoffType === 'quantity') {
+    startQuantityTakeoffWithPart(selectedPart);
+  } else if (takeoffType === 'linear') {
+    startLinearTakeoffWithPart(selectedPart, 'straight');
+  } else if (takeoffType === 'average') {
+    startLinearTakeoffWithPart(selectedPart, 'average');
+  } else if (takeoffType === 'distance') {
+    startDistanceTakeoffWithPart(selectedPart);
+  }
+}
+
+// EXCEL IMPORT/EXPORT
+function openCatalogManager() {
+  document.getElementById('catalog-manager').classList.add('show');
+}
+
+function closeCatalogManager() {
+  document.getElementById('catalog-manager').classList.remove('show');
+}
+
+function handleExcelImport(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+      
+      if (jsonData.length === 0) {
+        alert('Excel file is empty');
+        return;
+      }
+      
+      importPartsFromJSON(jsonData);
+      
+    } catch (error) {
+      alert('Error reading Excel file: ' + error.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function importPartsFromJSON(jsonData) {
+  let imported = 0;
+  let errors = [];
+  
+  jsonData.forEach((row, idx) => {
+    try {
+      const part = {
+        id: catalog.nextId++,
+        name: row['Name'] || row['name'] || row['Part Name'] || '',
+        description: row['Description'] || row['description'] || row['Desc'] || '',
+        uom: row['UOM'] || row['Unit of Measure'] || row['Unit'] || 'EA',
+        unitCost: parseFloat(row['Unit Cost'] || row['Cost'] || row['Price'] || 0),
+        unitLabor: parseFloat(row['Unit Labor'] || row['Labor'] || row['Labor (mins)'] || 0),
+        manufacturer: row['Manufacturer'] || row['Mfg'] || '',
+        supplier: row['Supplier'] || row['Vendor'] || '',
+        catalogNumber: row['Catalog Number'] || row['Cat #'] || row['Part Number'] || '',
+        costCode: row['Cost Code'] || '',
+        costCodeName: row['Cost Code Name'] || '',
+        materialType: row['Material Type'] || row['Type'] || row['Category'] || '',
+        customField1: row['Custom Field 1'] || row['Custom1'] || '',
+        customField2: row['Custom Field 2'] || row['Custom2'] || '',
+        customField3: row['Custom Field 3'] || row['Custom3'] || '',
+        customField4: row['Custom Field 4'] || row['Custom4'] || '',
+        customField5: row['Custom Field 5'] || row['Custom5'] || '',
+        takeoffTypes: determineTakeoffTypes(row)
+      };
+      
+      if (!part.name) {
+        errors.push(`Row ${idx + 2}: Missing part name`);
+        return;
+      }
+      
+      catalog.parts.push(part);
+      imported++;
+      
+    } catch (error) {
+      errors.push(`Row ${idx + 2}: ${error.message}`);
+    }
+  });
+  
+  saveCatalogToStorage();
+  
+  let message = `✅ Successfully imported ${imported} parts`;
+  if (errors.length > 0) {
+    message += `\n\n⚠️ ${errors.length} errors:\n` + errors.slice(0, 5).join('\n');
+    if (errors.length > 5) message += `\n... and ${errors.length - 5} more`;
+  }
+  
+  alert(message);
+  closeCatalogManager();
+  document.getElementById('excel-file-input').value = '';
+}
+
+function determineTakeoffTypes(row) {
+  const uom = (row['UOM'] || row['Unit of Measure'] || 'EA').toUpperCase();
+  const type = (row['Material Type'] || row['Type'] || '').toLowerCase();
+  const name = (row['Name'] || row['Part Name'] || '').toLowerCase();
+  
+  if (uom === 'FT' || uom === 'LF' || uom === 'M') {
+    if (name.includes('cable') || name.includes('conduit') || name.includes('tray')) {
+      return ['linear', 'average'];
+    }
+  }
+  
+  if (name.includes('hook') || name.includes('hanger') || name.includes('support') || 
+      name.includes('strap') || name.includes('clamp')) {
+    return ['distance'];
+  }
+  
+  return ['quantity'];
+}
+
+function exportCatalogToExcel() {
+  if (catalog.parts.length === 0) {
+    alert('Catalog is empty. Nothing to export.');
+    return;
+  }
+  
+  const exportData = catalog.parts.map(part => ({
+    'Name': part.name,
+    'Description': part.description,
+    'UOM': part.uom,
+    'Unit Cost': part.unitCost,
+    'Unit Labor (mins)': part.unitLabor,
+    'Manufacturer': part.manufacturer,
+    'Supplier': part.supplier,
+    'Catalog Number': part.catalogNumber,
+    'Cost Code': part.costCode,
+    'Cost Code Name': part.costCodeName,
+    'Material Type': part.materialType,
+    'Custom Field 1': part.customField1,
+    'Custom Field 2': part.customField2,
+    'Custom Field 3': part.customField3,
+    'Custom Field 4': part.customField4,
+    'Custom Field 5': part.customField5,
+    'Takeoff Types': part.takeoffTypes.join(', ')
+  }));
+  
+  const ws = XLSX.utils.json_to_sheet(exportData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Parts Catalog');
+  
+  const timestamp = new Date().toISOString().split('T')[0];
+  const filename = `TelecomEst_Catalog_${timestamp}.xlsx`;
+  
+  XLSX.writeFile(wb, filename);
+  
+  alert(`✅ Exported ${catalog.parts.length} parts to ${filename}`);
+}
+
+function downloadSampleExcel() {
+  const sampleData = [
+    {
+      'Name': 'Cat6A Jack',
+      'Description': 'Category 6A RJ45 Keystone Jack',
+      'UOM': 'EA',
+      'Unit Cost': 8.50,
+      'Unit Labor (mins)': 15,
+      'Manufacturer': 'Panduit',
+      'Supplier': 'Graybar',
+      'Catalog Number': 'CJ688TGBL',
+      'Cost Code': '27-1000',
+      'Cost Code Name': 'Communications - Horizontal Cabling',
+      'Material Type': 'Copper',
+      'Custom Field 1': '',
+      'Custom Field 2': '',
+      'Custom Field 3': '',
+      'Custom Field 4': '',
+      'Custom Field 5': ''
+    },
+    {
+      'Name': 'Cat6A Cable',
+      'Description': 'Category 6A UTP Cable 23AWG',
+      'UOM': 'FT',
+      'Unit Cost': 0.35,
+      'Unit Labor (mins)': 0.05,
+      'Manufacturer': 'CommScope',
+      'Supplier': 'Graybar',
+      'Catalog Number': '1427071-6',
+      'Cost Code': '27-1000',
+      'Cost Code Name': 'Communications - Horizontal Cabling',
+      'Material Type': 'Cable',
+      'Custom Field 1': '',
+      'Custom Field 2': '',
+      'Custom Field 3': '',
+      'Custom Field 4': '',
+      'Custom Field 5': ''
+    }
+  ];
+  
+  const ws = XLSX.utils.json_to_sheet(sampleData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Sample Catalog');
+  
+  XLSX.writeFile(wb, 'TelecomEst_Catalog_Template.xlsx');
+}
+
+// CATALOG-INTEGRATED TAKEOFF FUNCTIONS
+function startQuantityTakeoffWithPart(part) {
+  if (calMode) cancelCalibration();
+  if (linearMode) endLinear();
+  if (distanceMode) endDistance();
+  
+  takeoffMode = true;
+  selectedTakeoffPart = part;
+  document.getElementById('takeoff-instructions').style.display = 'block';
+}
+
+function startLinearTakeoffWithPart(part, mode) {
+  if (calMode) cancelCalibration();
+  if (takeoffMode) endTakeoff();
+  if (distanceMode) endDistance();
+  
+  linearMode = true;
+  linearModeType = mode;
+  linearItemId = 'part-' + part.id;
+  linearPoints = [];
+  selectedLinearPart = part;
+  
+  if (mode === 'average') {
+    averageRuns = [];
+    document.getElementById('avg-runs-panel').style.display = 'block';
+    updateAvgRunsDisplay();
+    document.getElementById('average-instructions').style.display = 'block';
+  } else {
+    document.getElementById('linear-instructions').style.display = 'block';
+  }
+}
+
+function startDistanceTakeoffWithPart(part) {
+  if (calMode) cancelCalibration();
+  if (takeoffMode) endTakeoff();
+  if (linearMode) endLinear();
+  
+  const spacing = prompt(`How many feet between each ${part.name}?`, '5');
+  if (!spacing || isNaN(spacing) || parseFloat(spacing) <= 0) {
+    alert('Invalid spacing. Please enter a number greater than 0.');
+    return;
+  }
+  
+  distanceMode = true;
+  distanceItemId = 'part-' + part.id;
+  distanceSpacing = parseFloat(spacing);
+  distancePoints = [];
+  selectedDistancePart = part;
+  
+  document.getElementById('distance-instructions').style.display = 'block';
+}
+
+// DISTANCE TAKEOFF FUNCTIONS
+function drawDistancePath() {
+  const ctx = document.getElementById('overlay-canvas').getContext('2d');
+  clearOverlay();
+
+  if (distancePoints.length === 0) return;
+
+  distancePoints.forEach((p, idx) => {
+    ctx.fillStyle = '#ffaa00';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 9px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(idx + 1, p.x, p.y);
+  });
+
+  if (distancePoints.length > 1) {
+    ctx.strokeStyle = '#ffaa00';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(distancePoints[0].x, distancePoints[0].y);
+    for (let i = 1; i < distancePoints.length; i++) {
+      ctx.lineTo(distancePoints[i].x, distancePoints[i].y);
+    }
+    ctx.stroke();
+  }
+
+  if (distancePoints.length > 0 && mousePos.x && mousePos.y) {
+    const lastPoint = distancePoints[distancePoints.length - 1];
+    ctx.strokeStyle = 'rgba(255, 170, 0, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(lastPoint.x, lastPoint.y);
+    ctx.lineTo(mousePos.x, mousePos.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function calculateDistancePathLength() {
+  if (!pageScales[currentPage]) return null;
+
+  let totalPixels = 0;
+  for (let i = 1; i < distancePoints.length; i++) {
+    const dx = distancePoints[i].x - distancePoints[i - 1].x;
+    const dy = distancePoints[i].y - distancePoints[i - 1].y;
+    totalPixels += Math.sqrt(dx * dx + dy * dy);
+  }
+
+  const scale = pageScales[currentPage];
+  return totalPixels / scale.pixelsPerFoot;
+}
+
+function finishDistance() {
+  if (!pageScales[currentPage]) {
+    alert('⚠️ Page not calibrated! Please calibrate the scale first.');
+    endDistance();
+    return;
+  }
+
+  const lengthFt = calculateDistancePathLength();
+  if (!lengthFt) return;
+
+  const count = Math.ceil(lengthFt / distanceSpacing);
+
+  if (!distances[currentPage]) distances[currentPage] = [];
+  distances[currentPage].push({
+    points: [...distancePoints],
+    itemId: distanceItemId,
+    count: count,
+    spacing: distanceSpacing,
+    lengthFt: lengthFt
+  });
+
+  alert(`✅ Distance takeoff saved!
+
+${selectedDistancePart.name}
+Path: ${Math.round(lengthFt)} ft
+Spacing: ${distanceSpacing} ft
+Count: ${count} items`);
+
+  distancePoints = [];
+  clearOverlay();
+  updateTakeoffSummary();
+}
+
+function endDistance() {
+  distanceMode = false;
+  distanceItemId = null;
+  distancePoints = [];
+  selectedDistancePart = null;
+  document.getElementById('distance-instructions').style.display = 'none';
+  clearOverlay();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// END CATALOG SYSTEM
+// ═══════════════════════════════════════════════════════════════
 
 
 // Update version display on page load
@@ -2339,13 +1874,6 @@ let avgDropCount = 0;
 let avgDropLength = 0;
 let mousePos = { x: 0, y: 0 }; // Track mouse position for live preview
 let shiftPressed = false; // Track shift key for axis snapping
-
-// Distance-based count state
-let distanceMode = false;
-let distancePoints = [];
-let distanceItemId = null;
-let distanceSpacing = 5; // Default 5 feet
-let distances = {}; // { pageNum: [{ points, itemId, count, spacing }] }
 
 // ─── PDF LOADING ───────────────────────────────────────────
 
@@ -2642,18 +2170,19 @@ function renderMarkers() {
 function updateTakeoffSummary() {
   const container = document.getElementById('takeoff-items');
 
-  // Aggregate quantity counts
   const summary = {};
   
   // Quantity takeoffs
   for (let pageNum in takeoffs) {
     takeoffs[pageNum].forEach(t => {
-      let part = null;
+      let displayName = t.itemId;
       if (t.itemId.startsWith('part-')) {
         const partId = parseInt(t.itemId.replace('part-', ''));
-        part = catalog.parts.find(p => p.id === partId);
+        const part = catalog.parts.find(p => p.id === partId);
+        if (part) displayName = part.name;
+      } else if (CATALOG_NAMES && CATALOG_NAMES[t.itemId]) {
+        displayName = CATALOG_NAMES[t.itemId];
       }
-      const displayName = part ? part.name : (CATALOG_NAMES[t.itemId] || t.itemId);
       
       if (!summary[displayName]) {
         summary[displayName] = { count: 0, pages: new Set(), type: 'qty' };
@@ -2666,12 +2195,14 @@ function updateTakeoffSummary() {
   // Linear takeoffs
   for (let pageNum in linears) {
     linears[pageNum].forEach(l => {
-      let part = null;
+      let displayName = l.itemId;
       if (l.itemId.startsWith('part-')) {
         const partId = parseInt(l.itemId.replace('part-', ''));
-        part = catalog.parts.find(p => p.id === partId);
+        const part = catalog.parts.find(p => p.id === partId);
+        if (part) displayName = part.name;
+      } else if (CATALOG_NAMES && CATALOG_NAMES[l.itemId]) {
+        displayName = CATALOG_NAMES[l.itemId];
       }
-      const displayName = part ? part.name : (CATALOG_NAMES[l.itemId] || l.itemId);
       
       if (!summary[displayName]) {
         summary[displayName] = { totalFt: 0, pages: new Set(), type: 'linear' };
@@ -2686,12 +2217,12 @@ function updateTakeoffSummary() {
   // Distance takeoffs
   for (let pageNum in distances) {
     distances[pageNum].forEach(d => {
-      let part = null;
+      let displayName = d.itemId;
       if (d.itemId.startsWith('part-')) {
         const partId = parseInt(d.itemId.replace('part-', ''));
-        part = catalog.parts.find(p => p.id === partId);
+        const part = catalog.parts.find(p => p.id === partId);
+        if (part) displayName = part.name;
       }
-      const displayName = part ? part.name : d.itemId;
       
       if (!summary[displayName]) {
         summary[displayName] = { count: 0, pages: new Set(), type: 'qty' };
@@ -2732,7 +2263,6 @@ function updateTakeoffSummary() {
 
   container.innerHTML = html;
 }
-
 // ─── CANVAS CLICK HANDLER ──────────────────────────────────
 
 document.getElementById('canvas-wrapper').addEventListener('click', function(e) {
@@ -3152,480 +2682,6 @@ function toggleSidebar() {
     sidebar.classList.add('hidden');
   }
 }
-
-// CATALOG BROWSER FUNCTIONS
-
-function openCatalogBrowser() {
-  if (!pdfDoc) {
-    alert('Please upload a PDF first.');
-    return;
-  }
-  
-  if (catalog.parts.length === 0) {
-    alert('Your catalog is empty. Go to Manage Catalog to import parts.');
-    return;
-  }
-  
-  renderCatalogList();
-  document.getElementById('catalog-browser').classList.add('show');
-}
-
-function closeCatalogBrowser() {
-  document.getElementById('catalog-browser').classList.remove('show');
-  document.getElementById('catalog-search').value = '';
-  document.getElementById('catalog-filter').value = '';
-}
-
-function filterCatalog() {
-  renderCatalogList();
-}
-
-function renderCatalogList() {
-  const searchTerm = document.getElementById('catalog-search').value.toLowerCase();
-  const filterType = document.getElementById('catalog-filter').value;
-  
-  const filtered = catalog.parts.filter(part => {
-    const matchesSearch = !searchTerm || 
-      part.name.toLowerCase().includes(searchTerm) || 
-      part.description.toLowerCase().includes(searchTerm) ||
-      part.catalogNumber.toLowerCase().includes(searchTerm);
-    
-    const matchesFilter = !filterType || part.materialType === filterType;
-    
-    return matchesSearch && matchesFilter;
-  });
-  
-  const listEl = document.getElementById('catalog-list');
-  
-  if (filtered.length === 0) {
-    listEl.innerHTML = `
-      <div class="empty-catalog">
-        <h3>No parts found</h3>
-        <p>Try adjusting your search or filter</p>
-      </div>
-    `;
-    return;
-  }
-  
-  let html = '';
-  filtered.forEach(part => {
-    const typeLabels = part.takeoffTypes.map(t => {
-      if (t === 'quantity') return '<span class="catalog-item-type type-quantity">Count</span>';
-      if (t === 'linear') return '<span class="catalog-item-type type-linear">Linear</span>';
-      if (t === 'average') return '<span class="catalog-item-type type-linear">Avg</span>';
-      if (t === 'distance') return '<span class="catalog-item-type type-distance">Distance</span>';
-      return '';
-    }).join(' ');
-    
-    html += `
-      <div class="catalog-item" onclick="selectPart(${part.id})">
-        <div class="catalog-item-header">
-          <div class="catalog-item-name">${part.name}</div>
-          <div>${typeLabels}</div>
-        </div>
-        <div class="catalog-item-desc">${part.description}</div>
-        <div class="catalog-item-details">
-          <span>💰 $${part.unitCost.toFixed(2)}/${part.uom}</span>
-          <span>⏱ ${part.unitLabor} min</span>
-          <span>🏢 ${part.manufacturer}</span>
-          <span>📦 ${part.catalogNumber}</span>
-        </div>
-      </div>
-    `;
-  });
-  
-  listEl.innerHTML = html;
-}
-
-function selectPart(partId) {
-  selectedPart = catalog.parts.find(p => p.id === partId);
-  if (!selectedPart) return;
-  
-  closeCatalogBrowser();
-  
-  document.getElementById('selected-part-display').textContent = selectedPart.name;
-  
-  // Enable/disable takeoff types
-  document.getElementById('type-quantity').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('quantity'));
-  document.getElementById('type-linear').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('linear'));
-  document.getElementById('type-average').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('average'));
-  document.getElementById('type-distance').classList.toggle('disabled', !selectedPart.takeoffTypes.includes('distance'));
-  
-  document.getElementById('takeoff-type-selector').classList.add('show');
-}
-
-function closeTakeoffTypeSelector() {
-  document.getElementById('takeoff-type-selector').classList.remove('show');
-  selectedPart = null;
-}
-
-function startTakeoffWithPart(takeoffType) {
-  if (!selectedPart) return;
-  
-  closeTakeoffTypeSelector();
-  
-  if (takeoffType === 'quantity') {
-    startQuantityTakeoffWithPart(selectedPart);
-  } else if (takeoffType === 'linear') {
-    startLinearTakeoffWithPart(selectedPart, 'straight');
-  } else if (takeoffType === 'average') {
-    startLinearTakeoffWithPart(selectedPart, 'average');
-  } else if (takeoffType === 'distance') {
-    startDistanceTakeoffWithPart(selectedPart);
-  }
-}
-
-
-
-// EXCEL IMPORT/EXPORT FUNCTIONS
-
-function openCatalogManager() {
-  document.getElementById('catalog-manager').classList.add('show');
-}
-
-function closeCatalogManager() {
-  document.getElementById('catalog-manager').classList.remove('show');
-}
-
-function handleExcelImport(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    try {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet);
-      
-      if (jsonData.length === 0) {
-        alert('Excel file is empty');
-        return;
-      }
-      
-      importPartsFromJSON(jsonData);
-      
-    } catch (error) {
-      alert('Error reading Excel file: ' + error.message);
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
-
-function importPartsFromJSON(jsonData) {
-  let imported = 0;
-  let errors = [];
-  
-  jsonData.forEach((row, idx) => {
-    try {
-      const part = {
-        id: catalog.nextId++,
-        name: row['Name'] || row['name'] || row['Part Name'] || '',
-        description: row['Description'] || row['description'] || row['Desc'] || '',
-        uom: row['UOM'] || row['Unit of Measure'] || row['Unit'] || 'EA',
-        unitCost: parseFloat(row['Unit Cost'] || row['Cost'] || row['Price'] || 0),
-        unitLabor: parseFloat(row['Unit Labor'] || row['Labor'] || row['Labor (mins)'] || 0),
-        manufacturer: row['Manufacturer'] || row['Mfg'] || '',
-        supplier: row['Supplier'] || row['Vendor'] || '',
-        catalogNumber: row['Catalog Number'] || row['Cat #'] || row['Part Number'] || '',
-        costCode: row['Cost Code'] || '',
-        costCodeName: row['Cost Code Name'] || '',
-        materialType: row['Material Type'] || row['Type'] || row['Category'] || '',
-        customField1: row['Custom Field 1'] || row['Custom1'] || '',
-        customField2: row['Custom Field 2'] || row['Custom2'] || '',
-        customField3: row['Custom Field 3'] || row['Custom3'] || '',
-        customField4: row['Custom Field 4'] || row['Custom4'] || '',
-        customField5: row['Custom Field 5'] || row['Custom5'] || '',
-        takeoffTypes: determineTakeoffTypes(row)
-      };
-      
-      if (!part.name) {
-        errors.push(`Row ${idx + 2}: Missing part name`);
-        return;
-      }
-      
-      catalog.parts.push(part);
-      imported++;
-      
-    } catch (error) {
-      errors.push(`Row ${idx + 2}: ${error.message}`);
-    }
-  });
-  
-  saveCatalogToStorage();
-  
-  let message = `✅ Successfully imported ${imported} parts`;
-  if (errors.length > 0) {
-    message += `
-
-⚠️ ${errors.length} errors:
-` + errors.slice(0, 5).join('
-');
-    if (errors.length > 5) message += `
-... and ${errors.length - 5} more`;
-  }
-  
-  alert(message);
-  closeCatalogManager();
-  document.getElementById('excel-file-input').value = '';
-}
-
-function determineTakeoffTypes(row) {
-  const uom = (row['UOM'] || row['Unit of Measure'] || 'EA').toUpperCase();
-  const type = (row['Material Type'] || row['Type'] || '').toLowerCase();
-  const name = (row['Name'] || row['Part Name'] || '').toLowerCase();
-  
-  if (uom === 'FT' || uom === 'LF' || uom === 'M') {
-    if (name.includes('cable') || name.includes('conduit') || name.includes('tray')) {
-      return ['linear', 'average'];
-    }
-  }
-  
-  if (name.includes('hook') || name.includes('hanger') || name.includes('support') || 
-      name.includes('strap') || name.includes('clamp')) {
-    return ['distance'];
-  }
-  
-  return ['quantity'];
-}
-
-function exportCatalogToExcel() {
-  if (catalog.parts.length === 0) {
-    alert('Catalog is empty. Nothing to export.');
-    return;
-  }
-  
-  const exportData = catalog.parts.map(part => ({
-    'Name': part.name,
-    'Description': part.description,
-    'UOM': part.uom,
-    'Unit Cost': part.unitCost,
-    'Unit Labor (mins)': part.unitLabor,
-    'Manufacturer': part.manufacturer,
-    'Supplier': part.supplier,
-    'Catalog Number': part.catalogNumber,
-    'Cost Code': part.costCode,
-    'Cost Code Name': part.costCodeName,
-    'Material Type': part.materialType,
-    'Custom Field 1': part.customField1,
-    'Custom Field 2': part.customField2,
-    'Custom Field 3': part.customField3,
-    'Custom Field 4': part.customField4,
-    'Custom Field 5': part.customField5,
-    'Takeoff Types': part.takeoffTypes.join(', ')
-  }));
-  
-  const ws = XLSX.utils.json_to_sheet(exportData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Parts Catalog');
-  
-  const timestamp = new Date().toISOString().split('T')[0];
-  const filename = `TelecomEst_Catalog_${timestamp}.xlsx`;
-  
-  XLSX.writeFile(wb, filename);
-  
-  alert(`✅ Exported ${catalog.parts.length} parts to ${filename}`);
-}
-
-function downloadSampleExcel() {
-  const sampleData = [
-    {
-      'Name': 'Cat6A Jack',
-      'Description': 'Category 6A RJ45 Keystone Jack',
-      'UOM': 'EA',
-      'Unit Cost': 8.50,
-      'Unit Labor (mins)': 15,
-      'Manufacturer': 'Panduit',
-      'Supplier': 'Graybar',
-      'Catalog Number': 'CJ688TGBL',
-      'Cost Code': '27-1000',
-      'Cost Code Name': 'Communications - Horizontal Cabling',
-      'Material Type': 'Copper',
-      'Custom Field 1': '',
-      'Custom Field 2': '',
-      'Custom Field 3': '',
-      'Custom Field 4': '',
-      'Custom Field 5': ''
-    },
-    {
-      'Name': 'Cat6A Cable',
-      'Description': 'Category 6A UTP Cable 23AWG',
-      'UOM': 'FT',
-      'Unit Cost': 0.35,
-      'Unit Labor (mins)': 0.05,
-      'Manufacturer': 'CommScope',
-      'Supplier': 'Graybar',
-      'Catalog Number': '1427071-6',
-      'Cost Code': '27-1000',
-      'Cost Code Name': 'Communications - Horizontal Cabling',
-      'Material Type': 'Cable',
-      'Custom Field 1': '',
-      'Custom Field 2': '',
-      'Custom Field 3': '',
-      'Custom Field 4': '',
-      'Custom Field 5': ''
-    }
-  ];
-  
-  const ws = XLSX.utils.json_to_sheet(sampleData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Sample Catalog');
-  
-  XLSX.writeFile(wb, 'TelecomEst_Catalog_Template.xlsx');
-}
-
-
-
-// UPDATED TAKEOFF FUNCTIONS FOR CATALOG PARTS
-
-function startQuantityTakeoffWithPart(part) {
-  if (calMode) cancelCalibration();
-  if (linearMode) endLinear();
-  if (distanceMode) endDistance();
-  
-  takeoffMode = true;
-  selectedTakeoffPart = part;
-  document.getElementById('takeoff-instructions').style.display = 'block';
-}
-
-function startLinearTakeoffWithPart(part, mode) {
-  if (calMode) cancelCalibration();
-  if (takeoffMode) endTakeoff();
-  if (distanceMode) endDistance();
-  
-  linearMode = true;
-  linearModeType = mode;
-  linearItemId = 'part-' + part.id;
-  linearPoints = [];
-  selectedLinearPart = part;
-  
-  if (mode === 'average') {
-    averageRuns = [];
-    document.getElementById('avg-runs-panel').style.display = 'block';
-    updateAvgRunsDisplay();
-    document.getElementById('average-instructions').style.display = 'block';
-  } else {
-    document.getElementById('linear-instructions').style.display = 'block';
-  }
-}
-
-function startDistanceTakeoffWithPart(part) {
-  if (calMode) cancelCalibration();
-  if (takeoffMode) endTakeoff();
-  if (linearMode) endLinear();
-  
-  const spacing = prompt(`How many feet between each ${part.name}?`, '5');
-  if (!spacing || isNaN(spacing) || parseFloat(spacing) <= 0) {
-    alert('Invalid spacing. Please enter a number greater than 0.');
-    return;
-  }
-  
-  distanceMode = true;
-  distanceItemId = 'part-' + part.id;
-  distanceSpacing = parseFloat(spacing);
-  distancePoints = [];
-  selectedDistancePart = part;
-  
-  document.getElementById('distance-instructions').style.display = 'block';
-}
-
-// DISTANCE TAKEOFF MODE FUNCTIONS
-
-function drawDistancePath() {
-  const ctx = document.getElementById('overlay-canvas').getContext('2d');
-  clearOverlay();
-
-  if (distancePoints.length === 0) return;
-
-  distancePoints.forEach((p, idx) => {
-    ctx.fillStyle = '#ffaa00';
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#000';
-    ctx.font = 'bold 9px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(idx + 1, p.x, p.y);
-  });
-
-  if (distancePoints.length > 1) {
-    ctx.strokeStyle = '#ffaa00';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(distancePoints[0].x, distancePoints[0].y);
-    for (let i = 1; i < distancePoints.length; i++) {
-      ctx.lineTo(distancePoints[i].x, distancePoints[i].y);
-    }
-    ctx.stroke();
-  }
-
-  if (distancePoints.length > 0 && mousePos.x && mousePos.y) {
-    const lastPoint = distancePoints[distancePoints.length - 1];
-    ctx.strokeStyle = 'rgba(255, 170, 0, 0.4)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(lastPoint.x, lastPoint.y);
-    ctx.lineTo(mousePos.x, mousePos.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
-
-function calculateDistancePathLength() {
-  if (!pageScales[currentPage]) return null;
-
-  let totalPixels = 0;
-  for (let i = 1; i < distancePoints.length; i++) {
-    const dx = distancePoints[i].x - distancePoints[i - 1].x;
-    const dy = distancePoints[i].y - distancePoints[i - 1].y;
-    totalPixels += Math.sqrt(dx * dx + dy * dy);
-  }
-
-  const scale = pageScales[currentPage];
-  return totalPixels / scale.pixelsPerFoot;
-}
-
-function finishDistance() {
-  if (!pageScales[currentPage]) {
-    alert('⚠️ Page not calibrated! Please calibrate the scale first.');
-    endDistance();
-    return;
-  }
-
-  const lengthFt = calculateDistancePathLength();
-  if (!lengthFt) return;
-
-  const count = Math.ceil(lengthFt / distanceSpacing);
-
-  if (!distances[currentPage]) distances[currentPage] = [];
-  distances[currentPage].push({
-    points: [...distancePoints],
-    itemId: distanceItemId,
-    count: count,
-    spacing: distanceSpacing,
-    lengthFt: lengthFt
-  });
-
-  alert(`✅ Distance takeoff saved!\n\n${selectedDistancePart.name}\nPath: ${Math.round(lengthFt)} ft\nSpacing: ${distanceSpacing} ft\nCount: ${count} items`);
-
-  distancePoints = [];
-  clearOverlay();
-  updateTakeoffSummary();
-}
-
-function endDistance() {
-  distanceMode = false;
-  distanceItemId = null;
-  distancePoints = [];
-  selectedDistancePart = null;
-  document.getElementById('distance-instructions').style.display = 'none';
-  clearOverlay();
-}
-
-
 </script>
 </body>
 </html>
