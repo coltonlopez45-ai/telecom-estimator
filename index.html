@@ -1204,7 +1204,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 // VERSION - Update this after each change
-const APP_VERSION = 'v1.3';
+const APP_VERSION = 'v1.4';
 
 // ═══════════════════════════════════════════════════════════════
 // CATALOG SYSTEM v1.3
@@ -2116,8 +2116,8 @@ function startTakeoff() {
 
 function endTakeoff() {
   takeoffMode = false;
+  selectedTakeoffPart = null;
   document.getElementById('takeoff-instructions').style.display = 'none';
-  document.getElementById('takeoff-btn').classList.remove('active');
 }
 
 function cancelTakeoffItem() {
@@ -2290,9 +2290,24 @@ document.getElementById('canvas-wrapper').addEventListener('click', function(e) 
 
   // TAKEOFF MODE
   if (takeoffMode) {
-    pendingTakeoffPoint = { x, y };
-    document.getElementById('takeoff-instructions').style.display = 'none';
-    document.getElementById('takeoff-modal').classList.add('show');
+    if (!selectedTakeoffPart) {
+      alert('No part selected. Please select from catalog first.');
+      return;
+    }
+    
+    // Directly add the marker using the selected part
+    if (!takeoffs[currentPage]) takeoffs[currentPage] = [];
+    
+    markerCounter++;
+    takeoffs[currentPage].push({
+      x: x,
+      y: y,
+      itemId: 'part-' + selectedTakeoffPart.id,
+      markerNum: markerCounter
+    });
+    
+    renderMarkers();
+    updateTakeoffSummary();
     return;
   }
 
@@ -2426,11 +2441,10 @@ function endLinear() {
   linearItemId = null;
   linearPoints = [];
   averageRuns = [];
+  selectedLinearPart = null;
   document.getElementById('linear-instructions').style.display = 'none';
   document.getElementById('average-instructions').style.display = 'none';
   document.getElementById('avg-runs-panel').style.display = 'none';
-  document.getElementById('linear-btn').classList.remove('active');
-  document.getElementById('avg-btn').classList.remove('active');
   clearOverlay();
 }
 
