@@ -1680,29 +1680,51 @@ function startLinearTakeoffWithPart(part, mode) {
 }
 
 function startDistanceTakeoffWithPart(part) {
+  alert(`DEBUG: startDistanceTakeoffWithPart called with part: ${part.name}`);
+  
   if (calMode) cancelCalibration();
   if (takeoffMode) endTakeoff();
   if (linearMode) endLinear();
   
-  const spacing = prompt(`How many feet between each ${part.name}?`, '5');
-  if (!spacing || isNaN(spacing) || parseFloat(spacing) <= 0) {
+  let spacing = prompt(`How many feet between each ${part.name}?`, '5');
+  
+  // Handle cancel or invalid input
+  if (spacing === null) {
+    // User clicked cancel
+    return;
+  }
+  
+  spacing = spacing.trim();
+  const spacingNum = parseFloat(spacing);
+  
+  if (!spacing || isNaN(spacingNum) || spacingNum <= 0) {
     alert('Invalid spacing. Please enter a number greater than 0.');
     return;
   }
   
   distanceMode = true;
   distanceItemId = 'part-' + part.id;
-  distanceSpacing = parseFloat(spacing);
+  distanceSpacing = spacingNum;
   distancePoints = [];
   selectedDistancePart = part;
   
   document.getElementById('distance-instructions').style.display = 'block';
+  
+  console.log('Distance mode activated:', {
+    distanceMode,
+    distanceItemId,
+    distanceSpacing,
+    partName: part.name
+  });
 }
 
 // DISTANCE TAKEOFF FUNCTIONS
 function drawDistancePath() {
+  // First render all saved paths
+  renderAllLinearPaths();
+  
+  // Then draw the current work-in-progress path on top
   const ctx = document.getElementById('overlay-canvas').getContext('2d');
-  clearOverlay();
 
   if (distancePoints.length === 0) return;
 
@@ -1785,7 +1807,7 @@ Spacing: ${distanceSpacing} ft
 Count: ${count} items`);
 
   distancePoints = [];
-  clearOverlay();
+  renderAllLinearPaths();
   updateTakeoffSummary();
 }
 
@@ -1795,7 +1817,7 @@ function endDistance() {
   distancePoints = [];
   selectedDistancePart = null;
   document.getElementById('distance-instructions').style.display = 'none';
-  clearOverlay();
+  renderAllLinearPaths();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1964,6 +1986,7 @@ async function renderPage(pageNum) {
   document.getElementById('page-num').textContent = pageNum + ' / ' + totalPages;
   updateScaleStatus();
   renderMarkers();
+  renderAllLinearPaths();
 }
 
 // ─── NAVIGATION ────────────────────────────────────────────
@@ -2023,7 +2046,7 @@ function cancelCalibration() {
   document.getElementById('cal-instructions').style.display = 'none';
   document.getElementById('canvas-wrapper').style.cursor = 'crosshair';
   document.getElementById('cal-btn').classList.remove('active');
-  clearOverlay();
+  renderAllLinearPaths();
 }
 
 function drawCalPoint(x, y, num) {
@@ -2056,6 +2079,62 @@ function clearOverlay() {
   canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
 }
 
+function renderAllLinearPaths() {
+  clearOverlay();
+  
+  // Render all saved linear paths for current page
+  if (linears[currentPage]) {
+    const ctx = document.getElementById('overlay-canvas').getContext('2d');
+    
+    linears[currentPage].forEach(linear => {
+      if (!linear.points || linear.points.length < 2) return;
+      
+      // Draw the path
+      ctx.strokeStyle = '#00d4ff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(linear.points[0].x, linear.points[0].y);
+      for (let i = 1; i < linear.points.length; i++) {
+        ctx.lineTo(linear.points[i].x, linear.points[i].y);
+      }
+      ctx.stroke();
+      
+      // Draw points
+      linear.points.forEach((p, idx) => {
+        ctx.fillStyle = '#00d4ff';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    });
+  }
+  
+  // Also render distance paths for current page
+  if (distances[currentPage]) {
+    const ctx = document.getElementById('overlay-canvas').getContext('2d');
+    
+    distances[currentPage].forEach(dist => {
+      if (!dist.points || dist.points.length < 2) return;
+      
+      ctx.strokeStyle = '#ffaa00';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(dist.points[0].x, dist.points[0].y);
+      for (let i = 1; i < dist.points.length; i++) {
+        ctx.lineTo(dist.points[i].x, dist.points[i].y);
+      }
+      ctx.stroke();
+      
+      dist.points.forEach((p, idx) => {
+        ctx.fillStyle = '#ffaa00';
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    });
+  }
+}
+
 function confirmCalibration() {
   const dist = parseFloat(document.getElementById('cal-distance').value);
   const unit = document.getElementById('cal-unit').value;
@@ -2076,7 +2155,7 @@ function confirmCalibration() {
   calMode = false;
   document.getElementById('cal-modal').classList.remove('show');
   document.getElementById('cal-btn').classList.remove('active');
-  clearOverlay();
+  renderAllLinearPaths();
   updateScaleStatus();
   updateInfo();
 
@@ -2447,12 +2526,15 @@ function endLinear() {
   document.getElementById('linear-instructions').style.display = 'none';
   document.getElementById('average-instructions').style.display = 'none';
   document.getElementById('avg-runs-panel').style.display = 'none';
-  clearOverlay();
+  renderAllLinearPaths();
 }
 
 function drawLinearPath() {
+  // First render all saved paths
+  renderAllLinearPaths();
+  
+  // Then draw the current work-in-progress path on top
   const ctx = document.getElementById('overlay-canvas').getContext('2d');
-  clearOverlay();
 
   if (linearPoints.length === 0) return;
 
@@ -2551,17 +2633,27 @@ function finishLinear() {
 
     // Reset for next trace
     linearPoints = [];
-    clearOverlay();
+    renderAllLinearPaths();
     updateTakeoffSummary();
 
   } else if (linearModeType === 'average') {
     // Add this run to average runs
     averageRuns.push({ lengthFt });
+    
+    // Also save the traced path so it stays visible
+    if (!linears[currentPage]) linears[currentPage] = [];
+    linears[currentPage].push({
+      points: [...linearPoints],
+      itemId: linearItemId,
+      lengthFt: lengthFt,
+      type: 'average-sample'
+    });
+    
     updateAvgRunsDisplay();
     
     // Reset points for next run
     linearPoints = [];
-    clearOverlay();
+    renderAllLinearPaths();
   }
 }
 
@@ -2593,7 +2685,7 @@ function addAnotherRun() {
   }
   // LinearMode stays true, just reset points
   linearPoints = [];
-  clearOverlay();
+  renderAllLinearPaths();
   document.getElementById('average-instructions').style.display = 'block';
 }
 
